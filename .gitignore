@@ -9,9 +9,19 @@ __pycache__/
 dist/
 .insightface/
 
-# Data
+# Data & thumbnails — never commit personal photos or test images
 *.db
 data/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.bmp
+*.mp4
+*.avi
+*.mov
+*.mkv
 
 # Docker volumes
 grafana-data/
