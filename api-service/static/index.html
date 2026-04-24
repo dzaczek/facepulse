@@ -168,6 +168,36 @@ canvas { max-height: 280px; }
 .modal-box input:focus { border-color: var(--accent2); }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* ══════════════════════════════════════════════════
+   TAB: SETTINGS
+══════════════════════════════════════════════════ */
+.settings-content { flex: 1; overflow-y: auto; padding: 24px; max-width: 760px; }
+.settings-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; overflow: hidden; }
+.settings-section-header { padding: 12px 18px; background: var(--surface2); border-bottom: 1px solid var(--border); }
+.settings-section-header h3 { font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .8px; }
+.settings-section-header p { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.setting-row { display: grid; grid-template-columns: 1fr 220px; align-items: center; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-size: 13px; font-weight: 500; color: var(--text-bright); }
+.setting-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.4; }
+.setting-control { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
+.setting-slider { width: 140px; accent-color: var(--accent2); cursor: pointer; }
+.setting-val { font-size: 12px; font-weight: 700; color: var(--text-bright); min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+.toggle-wrap { display: flex; align-items: center; gap: 8px; }
+.toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track { position: absolute; inset: 0; background: var(--border); border-radius: 11px; cursor: pointer; transition: background .2s; }
+.toggle input:checked + .toggle-track { background: var(--accent2); }
+.toggle-track::after { content:''; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff; top: 3px; left: 3px; transition: transform .2s; }
+.toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+.settings-footer { display: flex; gap: 10px; padding: 4px 0 24px; }
+.btn-save { padding: 10px 24px; background: var(--accent2); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: filter .15s; }
+.btn-save:hover { filter: brightness(1.2); }
+.btn-reset { padding: 10px 18px; background: transparent; color: var(--text-dim); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; cursor: pointer; }
+.btn-reset:hover { border-color: var(--text-dim); color: var(--text-bright); }
+.save-status { font-size: 12px; color: var(--green); opacity: 0; transition: opacity .3s; align-self: center; }
+.save-status.show { opacity: 1; }
+
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .empty-hint { color: var(--text-dim); font-size: 12px; padding: 20px 0; text-align: center; }
@@ -195,6 +225,7 @@ canvas { max-height: 280px; }
   <div class="tab active" data-tab="lab">Lab</div>
   <div class="tab" data-tab="suggestions">Suggestions <span class="tab-badge" id="sug-badge" style="display:none">0</span></div>
   <div class="tab" data-tab="dashboard">Dashboard</div>
+  <div class="tab" data-tab="settings">⚙ Settings</div>
 </div>
 
 <!-- ═══ TAB: LAB ═══ -->
@@ -262,6 +293,86 @@ canvas { max-height: 280px; }
   </div>
 </div>
 
+<!-- ═══ TAB: SETTINGS ═══ -->
+<div class="tab-content" id="tab-settings">
+  <div class="settings-content">
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <h3>Detection</h3>
+        <p>Applied by face-service in real time (synced every 30 s)</p>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Detection confidence</div><div class="setting-desc">Minimum score from the face detector. Higher = fewer false positives.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-min_confidence" min="0.1" max="0.95" step="0.01"><span class="setting-val" id="v-min_confidence">0.50</span></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Camera FPS</div><div class="setting-desc">Frames to process per second. Lower = less CPU, higher latency.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-camera_fps" min="0.5" max="30" step="0.5"><span class="setting-val" id="v-camera_fps">5</span></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Min face size (px)</div><div class="setting-desc">Discard faces smaller than this width. Filters out distant / blurry faces.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-min_face_size_px" min="0" max="300" step="10"><span class="setting-val" id="v-min_face_size_px">60</span></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Require both eyes visible</div><div class="setting-desc">Skip profiles and partially occluded faces. Improves embedding quality significantly.</div></div>
+        <div class="setting-control toggle-wrap">
+          <label class="toggle"><input type="checkbox" id="s-require_both_eyes"><span class="toggle-track"></span></label>
+          <span class="setting-val" id="v-require_both_eyes">Off</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Max yaw (horizontal turn)</div><div class="setting-desc">90° = disabled. Reduce to ~30° for strict frontal-only capture.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-max_yaw_deg" min="5" max="90" step="5"><span class="setting-val" id="v-max_yaw_deg">90°</span></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Max pitch (vertical tilt)</div><div class="setting-desc">90° = disabled. Reduce to ~30° to skip strongly tilted heads.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-max_pitch_deg" min="5" max="90" step="5"><span class="setting-val" id="v-max_pitch_deg">90°</span></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <h3>Recognition</h3>
+        <p>Applied immediately in the Go matcher</p>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Match threshold</div><div class="setting-desc">Cosine similarity required to call two faces the same person. Higher = stricter (fewer false merges, more unknowns).</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-matcher_threshold" min="0.3" max="0.95" step="0.01"><span class="setting-val" id="v-matcher_threshold">0.55</span></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Dedupe window (s)</div><div class="setting-desc">Minimum seconds between recording the same face again. Prevents log flooding from a stationary person.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-dedupe_window_s" min="1" max="120" step="1"><span class="setting-val" id="v-dedupe_window_s">5 s</span></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">EMA alpha (learning rate)</div><div class="setting-desc">How fast the stored embedding adapts to new appearances. 0.01 = very slow, 0.5 = fast but noisy.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-ema_alpha" min="0.01" max="0.5" step="0.01"><span class="setting-val" id="v-ema_alpha">0.15</span></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <h3>Clustering (Suggestions)</h3>
+        <p>Controls DBSCAN that groups unidentified faces</p>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">DBSCAN epsilon</div><div class="setting-desc">Cosine distance threshold for cluster membership. Lower = tighter clusters (higher similarity required). Try 0.35–0.50.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-dbscan_eps" min="0.1" max="0.7" step="0.01"><span class="setting-val" id="v-dbscan_eps">0.42</span></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Min cluster size</div><div class="setting-desc">Minimum faces required to form a suggestion cluster. 2 = any pair; 3 = needs more evidence.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-dbscan_min_pts" min="2" max="5" step="1"><span class="setting-val" id="v-dbscan_min_pts">2</span></div>
+      </div>
+    </div>
+
+    <div class="settings-footer">
+      <button class="btn-save" id="btn-save-settings">Save settings</button>
+      <button class="btn-reset" id="btn-reset-settings">Reset to defaults</button>
+      <span class="save-status" id="save-status">✓ Saved</span>
+    </div>
+  </div>
+</div>
+
 <!-- Lightbox -->
 <div class="lightbox" id="lightbox">
   <div class="lightbox-box" id="lightbox-box">
@@ -318,6 +429,7 @@ const api = {
   unlabel:    (id) => fetch(`/api/faces/${id}/label`, { method:'DELETE' }),
   deleteFace: (id) => fetch(`/api/faces/${id}`, { method:'DELETE' }),
   deleteBatch:(ids) => fetch('/api/faces/delete-batch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids: ids}) }),
+  settings:    () => fetch('/api/settings').then(r => r.ok ? r.json() : null),
   suggestions: () => fetch('/api/suggestions').then(r => r.ok ? r.json() : []),
   accept:   (face_ids, label) => fetch('/api/suggestions/accept', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids, label}) }),
   reject:   (face_ids) => fetch('/api/suggestions/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids}) }),
@@ -724,6 +836,94 @@ async function loadDashboard() {
     }
   });
 }
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+const DEFAULTS = {
+  min_confidence: 0.50, camera_fps: 5, min_face_size_px: 60,
+  require_both_eyes: false, max_yaw_deg: 90, max_pitch_deg: 90,
+  matcher_threshold: 0.55, dedupe_window_s: 5, ema_alpha: 0.15,
+  dbscan_eps: 0.42, dbscan_min_pts: 2,
+};
+
+const SLIDERS = [
+  { key: 'min_confidence',   fmt: v => v.toFixed(2) },
+  { key: 'camera_fps',       fmt: v => v % 1 === 0 ? `${v}` : v.toFixed(1) },
+  { key: 'min_face_size_px', fmt: v => `${v} px` },
+  { key: 'max_yaw_deg',      fmt: v => `${v}°` },
+  { key: 'max_pitch_deg',    fmt: v => `${v}°` },
+  { key: 'matcher_threshold',fmt: v => v.toFixed(2) },
+  { key: 'dedupe_window_s',  fmt: v => `${v} s` },
+  { key: 'ema_alpha',        fmt: v => v.toFixed(2) },
+  { key: 'dbscan_eps',       fmt: v => v.toFixed(2) },
+  { key: 'dbscan_min_pts',   fmt: v => `${v}` },
+];
+
+function applySettingsToUI(cfg) {
+  SLIDERS.forEach(({ key, fmt }) => {
+    const el = document.getElementById(`s-${key}`);
+    const vl = document.getElementById(`v-${key}`);
+    if (!el || !vl) return;
+    el.value = cfg[key] ?? DEFAULTS[key];
+    vl.textContent = fmt(parseFloat(el.value));
+  });
+  const eyeEl = document.getElementById('s-require_both_eyes');
+  const eyeVl = document.getElementById('v-require_both_eyes');
+  if (eyeEl) { eyeEl.checked = !!cfg.require_both_eyes; eyeVl.textContent = eyeEl.checked ? 'On' : 'Off'; }
+}
+
+function readSettingsFromUI() {
+  const out = {};
+  SLIDERS.forEach(({ key }) => {
+    const el = document.getElementById(`s-${key}`);
+    if (el) out[key] = parseFloat(el.value);
+  });
+  const eyeEl = document.getElementById('s-require_both_eyes');
+  if (eyeEl) out.require_both_eyes = eyeEl.checked;
+  return out;
+}
+
+// Wire slider live-update
+SLIDERS.forEach(({ key, fmt }) => {
+  const el = document.getElementById(`s-${key}`);
+  const vl = document.getElementById(`v-${key}`);
+  if (el && vl) el.addEventListener('input', () => { vl.textContent = fmt(parseFloat(el.value)); });
+});
+const eyeEl = document.getElementById('s-require_both_eyes');
+const eyeVl = document.getElementById('v-require_both_eyes');
+if (eyeEl) eyeEl.addEventListener('change', () => { eyeVl.textContent = eyeEl.checked ? 'On' : 'Off'; });
+
+async function loadSettings() {
+  const data = await api.settings();
+  if (data) applySettingsToUI(data);
+}
+
+document.getElementById('btn-save-settings').addEventListener('click', async () => {
+  const cfg = readSettingsFromUI();
+  const res = await fetch('/api/settings', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(cfg)
+  });
+  if (res.ok) {
+    applySettingsToUI(await res.json());
+    const st = document.getElementById('save-status');
+    st.classList.add('show');
+    setTimeout(() => st.classList.remove('show'), 2500);
+  }
+});
+
+document.getElementById('btn-reset-settings').addEventListener('click', async () => {
+  if (!confirm('Reset all settings to factory defaults?')) return;
+  const res = await fetch('/api/settings', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(DEFAULTS)
+  });
+  if (res.ok) applySettingsToUI(await res.json());
+});
+
+// Load settings when tab is opened
+document.querySelectorAll('.tab').forEach(tab => {
+  if (tab.dataset.tab === 'settings') {
+    tab.addEventListener('click', loadSettings);
+  }
+});
 
 // ─── Lightbox ─────────────────────────────────────────────────────────────────
 const lightbox     = document.getElementById('lightbox');

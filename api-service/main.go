@@ -29,7 +29,14 @@ func main() {
 	}
 	defer db.Close()
 
-	m := matcher.New(0)
+	cfg, err := db.GetSettings()
+	if err != nil {
+		log.Printf("load settings: %v — using defaults", err)
+	}
+	log.Printf("settings loaded: threshold=%.2f fps=%.0f eyes=%v",
+		cfg.MatcherThreshold, cfg.CameraFPS, cfg.RequireBothEyes)
+
+	m := matcher.New(cfg.MatcherThreshold)
 	if err := loadMatcher(db, m); err != nil {
 		log.Printf("matcher initial load: %v", err)
 	}
@@ -53,7 +60,7 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	srv := api.NewServer(db, m, met, dataDir)
+	srv := api.NewServer(db, m, met, dataDir, cfg)
 	srv.RegisterRoutes(mux)
 
 	log.Printf("facepulse api listening on %s", addr)

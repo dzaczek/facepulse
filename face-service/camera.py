@@ -24,6 +24,9 @@ class CameraLoop:
         self._thread: threading.Thread | None = None
         self._callbacks: list[Callable[[np.ndarray], None]] = []
 
+    def set_fps(self, fps: float) -> None:
+        self._interval = 1.0 / max(fps, 0.1)
+
     def add_callback(self, cb: Callable[[np.ndarray], None]) -> None:
         self._callbacks.append(cb)
 

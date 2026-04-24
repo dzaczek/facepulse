@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/dzaczek/facepulse/settings"
 	_ "modernc.org/sqlite"
 )
 
@@ -72,6 +73,10 @@ func migrate(db *sql.DB) error {
 			confidence REAL    NOT NULL,
 			bbox       TEXT    NOT NULL,
 			seen_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS settings (
+			id   INTEGER PRIMARY KEY,
+			data TEXT    NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS negative_pairs (
 			face_id_a  INTEGER NOT NULL,
@@ -318,6 +323,34 @@ func (d *DB) NegativePairs() ([][2]int64, error) {
 		pairs = append(pairs, p)
 	}
 	return pairs, rows.Err()
+}
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+func (d *DB) GetSettings() (settings.S, error) {
+	var data string
+	err := d.db.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&data)
+	if err == sql.ErrNoRows {
+		return settings.Default(), nil
+	}
+	if err != nil {
+		return settings.Default(), err
+	}
+	s := settings.Default()
+	return s, json.Unmarshal([]byte(data), &s)
+}
+
+func (d *DB) SaveSettings(s settings.S) error {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	_, err = d.db.Exec(
+		`INSERT INTO settings (id, data) VALUES (1, ?)
+		 ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+		string(data),
+	)
+	return err
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

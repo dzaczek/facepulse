@@ -46,6 +46,13 @@ func (m *Matcher) Len() int {
 
 // Match returns best matching face ID and similarity score.
 // Returns -1 if no face exceeds the threshold.
+// SetThreshold updates the matching similarity threshold at runtime.
+func (m *Matcher) SetThreshold(t float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.threshold = t
+}
+
 // Remove deletes a face from the in-memory index.
 func (m *Matcher) Remove(id int64) {
 	m.mu.Lock()

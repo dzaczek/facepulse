@@ -8,6 +8,7 @@ class DetectedFace:
     bbox: list[float]
     embedding: list[float]
     confidence: float
+    kps: list | None = None   # 5 keypoints: left_eye, right_eye, nose, left_mouth, right_mouth
 
 
 @runtime_checkable

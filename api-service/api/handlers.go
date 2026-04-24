@@ -17,14 +17,8 @@ import (
 	"github.com/dzaczek/facepulse/cluster"
 	"github.com/dzaczek/facepulse/matcher"
 	"github.com/dzaczek/facepulse/metrics"
+	"github.com/dzaczek/facepulse/settings"
 	"github.com/dzaczek/facepulse/storage"
-)
-
-const (
-	dedupeWindow    = 5 * time.Second
-	embeddingAlpha  = 0.15 // weight of new embedding in EMA update
-	dbscanEps       = 0.42 // cosine distance threshold (→ similarity ≥ 0.58)
-	dbscanMinPts    = 2
 )
 
 type Server struct {
@@ -33,8 +27,24 @@ type Server struct {
 	metrics *metrics.Metrics
 	dataDir string
 
+	cfgMu sync.RWMutex
+	cfg   settings.S
+
 	mu       sync.Mutex
 	lastSeen map[int64]time.Time
+}
+
+func (s *Server) getCfg() settings.S {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg
+}
+
+func (s *Server) setCfg(c settings.S) {
+	s.cfgMu.Lock()
+	s.cfg = c
+	s.cfgMu.Unlock()
+	s.matcher.SetThreshold(c.MatcherThreshold)
 }
 
 type appearanceReq struct {
@@ -44,14 +54,17 @@ type appearanceReq struct {
 	Thumbnail  string    `json:"thumbnail"`
 }
 
-func NewServer(db *storage.DB, m *matcher.Matcher, met *metrics.Metrics, dataDir string) *Server {
-	return &Server{
+func NewServer(db *storage.DB, m *matcher.Matcher, met *metrics.Metrics, dataDir string, cfg settings.S) *Server {
+	srv := &Server{
 		db:       db,
 		matcher:  m,
 		metrics:  met,
 		dataDir:  dataDir,
+		cfg:      cfg,
 		lastSeen: make(map[int64]time.Time),
 	}
+	srv.matcher.SetThreshold(cfg.MatcherThreshold)
+	return srv
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
@@ -64,6 +77,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("DELETE /api/faces/{id}", s.handleDeleteFace)
 	mux.HandleFunc("POST /api/faces/delete-batch", s.handleDeleteFaces)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
 	mux.HandleFunc("POST /api/suggestions/accept", s.handleAcceptSuggestion)
 	mux.HandleFunc("POST /api/suggestions/reject", s.handleRejectSuggestion)
@@ -77,6 +92,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request) {
 	s.metrics.FramesProcessed.Inc()
+	cfg := s.getCfg()
 
 	var req appearanceReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -107,6 +123,7 @@ func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	dedupeWindow := time.Duration(cfg.DedupeWindowS) * time.Second
 	s.mu.Lock()
 	last, exists := s.lastSeen[faceID]
 	shouldRecord := !exists || time.Since(last) > dedupeWindow
@@ -127,10 +144,10 @@ func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request) {
 			strconv.FormatInt(faceID, 10), label,
 		).Inc()
 
-		// Online learning: update stored embedding with EMA
+		// Online learning: EMA embedding update
 		if !isNew {
 			if stored := s.matcher.GetEmbedding(faceID); stored != nil {
-				updated := emaEmbedding(stored, req.Embedding, embeddingAlpha)
+				updated := emaEmbedding(stored, req.Embedding, cfg.EmaAlpha)
 				s.matcher.Update(faceID, updated)
 				_ = s.db.UpdateEmbedding(faceID, updated)
 			}
@@ -286,6 +303,7 @@ type suggestionResult struct {
 }
 
 func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request) {
+	cfg := s.getCfg()
 	unlabeled, err := s.db.UnlabeledEmbeddings()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -303,7 +321,7 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request) {
 		points[i] = cluster.Point{ID: f.ID, Embedding: f.Embedding}
 	}
 
-	clusters := cluster.DBSCAN(points, dbscanEps, dbscanMinPts)
+	clusters := cluster.DBSCAN(points, cfg.DbscanEps, cfg.DbscanMinPts)
 
 	var suggestions []suggestionResult
 	for _, c := range clusters {
@@ -379,6 +397,53 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"timeline":    timeline,
 		"top10":       top10,
 	})
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.getCfg())
+}
+
+func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	cur := s.getCfg()
+	if err := json.NewDecoder(r.Body).Decode(&cur); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Clamp values to safe ranges
+	cur.MatcherThreshold = clamp(cur.MatcherThreshold, 0.1, 0.99)
+	cur.EmaAlpha = clamp(cur.EmaAlpha, 0.01, 0.5)
+	cur.DbscanEps = clamp(cur.DbscanEps, 0.1, 0.9)
+	cur.MinConfidence = clamp(cur.MinConfidence, 0.1, 0.99)
+	cur.CameraFPS = clamp(cur.CameraFPS, 0.5, 30)
+	cur.MaxYawDeg = clamp(cur.MaxYawDeg, 5, 90)
+	cur.MaxPitchDeg = clamp(cur.MaxPitchDeg, 5, 90)
+	if cur.DedupeWindowS < 1 {
+		cur.DedupeWindowS = 1
+	}
+	if cur.DbscanMinPts < 2 {
+		cur.DbscanMinPts = 2
+	}
+	if cur.MinFaceSizePx < 0 {
+		cur.MinFaceSizePx = 0
+	}
+
+	s.setCfg(cur)
+	if err := s.db.SaveSettings(cur); err != nil {
+		log.Printf("save settings: %v", err)
+	}
+	writeJSON(w, cur)
+}
+
+func clamp(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

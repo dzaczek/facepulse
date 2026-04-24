@@ -40,6 +40,7 @@ class OnnxBackend:
                 bbox=face.bbox.tolist(),
                 embedding=face.embedding.tolist(),
                 confidence=float(face.det_score),
+                kps=face.kps.tolist() if face.kps is not None else None,
             )
             for face in faces
             if face.embedding is not None
