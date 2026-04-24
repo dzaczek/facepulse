@@ -1,0 +1,27 @@
+# Go
+api-service/facepulse-api
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.insightface/
+
+# Data
+*.db
+data/
+
+# Docker volumes
+grafana-data/
+prometheus-data/
+
+# Models
+*.hef
+*.onnx
+
+# IDE
+.idea/
+.vscode/
+*.swp
