@@ -1,6 +1,8 @@
 package main
 
 import (
+	"embed"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -13,8 +15,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+//go:embed static
+var staticFiles embed.FS
+
 func main() {
 	dbPath := env("DB_PATH", "/data/facepulse.db")
+	dataDir := env("DATA_DIR", "/data")
 	addr := env("LISTEN_ADDR", ":8080")
 
 	db, err := storage.New(dbPath)
@@ -41,10 +47,13 @@ func main() {
 		}
 	}()
 
+	staticSub, _ := fs.Sub(staticFiles, "static")
+
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	srv := api.NewServer(db, m, met)
+	srv := api.NewServer(db, m, met, dataDir)
 	srv.RegisterRoutes(mux)
 
 	log.Printf("facepulse api listening on %s", addr)
