@@ -4,404 +4,341 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FacePulse Lab</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --surface2: #1c2128;
-  --border: #30363d;
-  --accent: #e63946;
-  --accent2: #457b9d;
-  --text: #c9d1d9;
-  --text-dim: #6e7681;
-  --text-bright: #f0f6fc;
-  --green: #3fb950;
-  --yellow: #d29922;
-  --radius: 10px;
-  --card-size: 120px;
+  --bg: #0d1117; --surface: #161b22; --surface2: #1c2128;
+  --border: #30363d; --accent: #e63946; --accent2: #457b9d;
+  --text: #c9d1d9; --text-dim: #6e7681; --text-bright: #f0f6fc;
+  --green: #3fb950; --yellow: #d29922; --purple: #a371f7;
+  --radius: 10px; --card-size: 116px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-/* Header */
-header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 24px; border-bottom: 1px solid var(--border);
-  background: var(--surface); position: sticky; top: 0; z-index: 100;
-}
-header h1 { font-size: 18px; font-weight: 700; color: var(--text-bright); letter-spacing: -0.3px; }
+/* ── Header ── */
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+header h1 { font-size: 17px; font-weight: 700; color: var(--text-bright); }
 header h1 span { color: var(--accent); }
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
-.live-badge {
-  margin-left: auto; display: flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--text-dim); padding: 4px 10px;
-  background: var(--surface2); border: 1px solid var(--border); border-radius: 20px;
-}
-.live-badge .indicator { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); }
-.live-badge.active .indicator { background: var(--green); animation: pulse 2s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.live-badge { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; }
+.live-badge .ind { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); }
+.live-badge.active .ind { background: var(--green); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.35} }
 
-.counter-badge {
-  font-size: 11px; padding: 2px 8px; border-radius: 20px;
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text-dim); font-weight: 600;
-}
+/* ── Stats bar ── */
+.stats-bar { display: flex; gap: 20px; padding: 7px 20px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-dim); flex-shrink: 0; flex-wrap: wrap; }
+.stats-bar span strong { color: var(--text-bright); }
 
-/* Layout */
-main {
-  display: grid; grid-template-columns: 300px 1fr;
-  gap: 0; height: calc(100vh - 53px);
-}
+/* ── Tabs ── */
+.tabs { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.tab { padding: 10px 16px; font-size: 13px; font-weight: 500; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s; user-select: none; }
+.tab:hover { color: var(--text-bright); }
+.tab.active { color: var(--text-bright); border-bottom-color: var(--accent2); }
+.tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font-size: 10px; font-weight: 700; background: var(--accent); color: #fff; margin-left: 6px; }
 
-/* Left column — Unidentified */
-.col-unknown {
-  border-right: 1px solid var(--border);
-  overflow-y: auto; padding: 20px 16px;
-  background: var(--surface);
-}
-.col-header {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
-}
-.col-header h2 { font-size: 13px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .8px; }
+/* ── Tab content ── */
+.tab-content { display: none; flex: 1; overflow: hidden; }
+.tab-content.active { display: flex; flex-direction: column; }
 
-.face-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-size), 1fr)); gap: 10px;
-  min-height: 60px;
-}
+/* ══════════════════════════════════════════════════
+   TAB: LAB
+══════════════════════════════════════════════════ */
+.lab-layout { display: grid; grid-template-columns: 290px 1fr; flex: 1; overflow: hidden; }
+.col-unknown { border-right: 1px solid var(--border); overflow-y: auto; padding: 16px; background: var(--surface); }
+.col-known { overflow-y: auto; padding: 16px; }
+.col-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.col-header h2 { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .8px; }
+.badge { font-size: 11px; padding: 1px 7px; border-radius: 20px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); font-weight: 600; }
 
-/* Face card */
-.face-card {
-  background: var(--surface2); border: 1.5px solid var(--border);
-  border-radius: var(--radius); overflow: hidden; cursor: grab;
-  transition: transform .15s, border-color .15s, box-shadow .15s;
-  user-select: none; position: relative;
-}
+.face-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-size), 1fr)); gap: 8px; min-height: 48px; }
+
+/* ── Face card ── */
+.face-card { background: var(--surface2); border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: grab; transition: transform .15s, border-color .15s, box-shadow .15s; user-select: none; position: relative; }
 .face-card:hover { border-color: var(--accent2); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.4); }
-.face-card.dragging { opacity: .4; transform: scale(.96); cursor: grabbing; }
-.face-card img {
-  width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
-  background: var(--surface); pointer-events: none;
-}
-.face-card .card-footer {
-  padding: 6px 8px; font-size: 11px; color: var(--text-dim);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.face-card .card-id { font-weight: 700; color: var(--text); }
+.face-card.dragging { opacity: .35; transform: scale(.94); cursor: grabbing; }
+.face-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--surface); pointer-events: none; }
+.card-footer { padding: 5px 8px; font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-id { font-weight: 700; color: var(--text); }
+.card-rm { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; background: rgba(0,0,0,.65); border: none; border-radius: 50%; color: var(--text-dim); cursor: pointer; font-size: 14px; display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.face-card:hover .card-rm { display: flex; }
+.card-rm:hover { background: var(--accent); color: #fff; }
 
-/* Tags on card */
-.card-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 6px 6px; }
-.tag {
-  font-size: 10px; padding: 2px 6px; border-radius: 10px;
-  background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
-  cursor: pointer; display: flex; align-items: center; gap: 3px;
-}
-.tag:hover { border-color: var(--accent); color: var(--accent); }
-.tag .tag-x { font-size: 12px; line-height: 1; }
-
-/* Remove button on card */
-.card-remove {
-  position: absolute; top: 5px; right: 5px; width: 20px; height: 20px;
-  background: rgba(0,0,0,.6); border: none; border-radius: 50%;
-  color: var(--text-dim); cursor: pointer; font-size: 13px; line-height: 1;
-  display: none; align-items: center; justify-content: center;
-  backdrop-filter: blur(4px);
-}
-.face-card:hover .card-remove { display: flex; }
-.card-remove:hover { background: var(--accent); color: #fff; }
-
-/* Right column — Known persons */
-.col-known { overflow-y: auto; padding: 20px; }
-
-/* Person group */
-.person-group {
-  background: var(--surface); border: 1.5px solid var(--border);
-  border-radius: var(--radius); margin-bottom: 14px; overflow: hidden;
-  transition: border-color .2s;
-}
-.person-group.drop-target { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(69,123,157,.2); }
-
-.person-header {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; border-bottom: 1px solid var(--border);
-  background: var(--surface2);
-}
-.person-avatar {
-  width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
-  background: var(--surface); border: 1px solid var(--border); flex-shrink: 0;
-}
-.person-avatar-placeholder {
-  width: 32px; height: 32px; border-radius: 50%;
-  background: var(--accent2); display: flex; align-items: center; justify-content: center;
-  font-size: 14px; color: #fff; font-weight: 700; flex-shrink: 0;
-}
-
-.person-name {
-  font-size: 14px; font-weight: 600; color: var(--text-bright);
-  flex: 1; cursor: text; padding: 2px 4px; border-radius: 4px;
-  border: 1px solid transparent; background: transparent;
-  outline: none; min-width: 0;
-}
+/* ── Person group ── */
+.person-group { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; transition: border-color .2s, box-shadow .2s; }
+.person-group.drop-target { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(69,123,157,.18); }
+.person-header { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+.person-avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: var(--surface); border: 1px solid var(--border); flex-shrink: 0; }
+.person-avatar-ph { width: 30px; height: 30px; border-radius: 50%; background: var(--accent2); display: flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; font-weight: 700; flex-shrink: 0; }
+.person-name { font-size: 14px; font-weight: 600; color: var(--text-bright); flex: 1; cursor: text; padding: 2px 4px; border-radius: 4px; border: 1px solid transparent; background: transparent; outline: none; min-width: 0; }
 .person-name:hover { border-color: var(--border); }
 .person-name:focus { border-color: var(--accent2); background: var(--surface); }
-
-.person-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
-.btn-icon {
-  background: none; border: 1px solid var(--border); color: var(--text-dim);
-  border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px;
-  transition: all .15s;
-}
-.btn-icon:hover { border-color: var(--accent); color: var(--accent); }
-
-.person-faces {
-  display: flex; flex-wrap: wrap; gap: 8px; padding: 12px;
-  min-height: 56px;
-}
-.person-drop-hint {
-  color: var(--text-dim); font-size: 12px; align-self: center;
-  padding: 6px; display: none;
-}
-.person-faces:empty + .person-drop-hint { display: block; }
-
-/* New person drop zone */
-.new-person-zone {
-  border: 2px dashed var(--border); border-radius: var(--radius);
-  padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px;
-  cursor: default; transition: all .2s; margin-bottom: 20px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-}
+.person-actions { display: flex; gap: 5px; flex-shrink: 0; }
+.btn-sm { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 11px; transition: all .15s; }
+.btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+.person-faces { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px; min-height: 48px; }
+.drop-hint { color: var(--text-dim); font-size: 12px; font-style: italic; padding: 4px 2px; align-self: center; }
+.new-person-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 18px; text-align: center; color: var(--text-dim); font-size: 13px; cursor: default; transition: all .2s; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .new-person-zone.drop-target { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.05); }
-.new-person-zone svg { width: 18px; height: 18px; }
+.new-person-zone svg { width: 17px; height: 17px; }
 
-/* Modal */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200;
-  display: none; align-items: center; justify-content: center;
-  backdrop-filter: blur(4px);
-}
+/* ══════════════════════════════════════════════════
+   TAB: SUGGESTIONS
+══════════════════════════════════════════════════ */
+.suggestions-content { flex: 1; overflow-y: auto; padding: 20px; }
+.suggestions-intro { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.5; max-width: 640px; }
+.suggestions-intro strong { color: var(--text); }
+.suggestion-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 14px; }
+.suggestion-faces { display: flex; gap: 6px; flex-shrink: 0; }
+.suggestion-faces .face-card { width: 80px; flex-shrink: 0; cursor: default; pointer-events: none; }
+.suggestion-faces .face-card:hover { transform: none; box-shadow: none; }
+.suggestion-info { flex: 1; min-width: 0; }
+.suggestion-sim { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.sim-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 10px; overflow: hidden; }
+.sim-bar-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent2), var(--purple)); transition: width .4s; }
+.suggestion-name-row { display: flex; gap: 8px; align-items: center; }
+.suggestion-name-row input { flex: 1; padding: 7px 10px; background: var(--surface2); border: 1.5px solid var(--border); border-radius: 7px; color: var(--text-bright); font-size: 13px; outline: none; }
+.suggestion-name-row input:focus { border-color: var(--accent2); }
+.suggestion-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.btn { padding: 7px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all .15s; }
+.btn-ok { background: var(--accent2); color: #fff; }
+.btn-ok:hover { filter: brightness(1.2); }
+.btn-no { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+.btn-no:hover { border-color: var(--accent); color: var(--accent); }
+.no-suggestions { color: var(--text-dim); font-size: 13px; padding: 40px 0; text-align: center; }
+.no-suggestions span { display: block; font-size: 32px; margin-bottom: 8px; }
+
+/* ══════════════════════════════════════════════════
+   TAB: DASHBOARD
+══════════════════════════════════════════════════ */
+.dashboard-content { flex: 1; overflow-y: auto; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; }
+.chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.chart-card.wide { grid-column: 1 / -1; }
+.chart-card h3 { font-size: 13px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 16px; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; grid-column: 1 / -1; }
+.stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; }
+.stat-box .val { font-size: 28px; font-weight: 700; color: var(--text-bright); line-height: 1; }
+.stat-box .lbl { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+canvas { max-height: 280px; }
+
+/* ── Modal ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 200; display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
 .modal-overlay.open { display: flex; }
-.modal-box {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 28px; width: 340px;
-  box-shadow: 0 24px 64px rgba(0,0,0,.6);
-}
-.modal-box h3 { font-size: 16px; font-weight: 700; color: var(--text-bright); margin-bottom: 6px; }
-.modal-box p { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; }
-.modal-box input {
-  width: 100%; padding: 10px 14px; background: var(--surface2);
-  border: 1.5px solid var(--border); border-radius: 8px; color: var(--text-bright);
-  font-size: 14px; outline: none; margin-bottom: 16px;
-}
+.modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px; width: 330px; box-shadow: 0 24px 64px rgba(0,0,0,.6); }
+.modal-box h3 { font-size: 15px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; }
+.modal-box p { font-size: 12px; color: var(--text-dim); margin-bottom: 18px; }
+.modal-box input { width: 100%; padding: 9px 12px; background: var(--surface2); border: 1.5px solid var(--border); border-radius: 7px; color: var(--text-bright); font-size: 13px; outline: none; margin-bottom: 14px; }
 .modal-box input:focus { border-color: var(--accent2); }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
-.btn {
-  padding: 8px 18px; border-radius: 8px; font-size: 13px;
-  font-weight: 600; cursor: pointer; border: none; transition: all .15s;
-}
-.btn-primary { background: var(--accent2); color: #fff; }
-.btn-primary:hover { background: #5a9abc; }
-.btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
-.btn-ghost:hover { border-color: var(--text-dim); color: var(--text-bright); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* Tooltip/empty */
-.empty-hint { color: var(--text-dim); font-size: 13px; padding: 24px 0; text-align: center; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-/* Stats bar */
-.stats-bar {
-  display: flex; gap: 20px; padding: 10px 24px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  font-size: 12px; color: var(--text-dim);
-}
-.stats-bar span { display: flex; align-items: center; gap: 6px; }
-.stats-bar strong { color: var(--text-bright); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.empty-hint { color: var(--text-dim); font-size: 12px; padding: 20px 0; text-align: center; }
 </style>
 </head>
 <body>
 
 <header>
   <div class="dot"></div>
-  <h1>Face<span>Pulse</span> <span style="color:var(--text-dim);font-weight:400;font-size:14px">Lab</span></h1>
+  <h1>Face<span>Pulse</span> <span style="color:var(--text-dim);font-weight:400;font-size:13px">Lab</span></h1>
   <div class="live-badge" id="live-badge">
-    <div class="indicator"></div>
+    <div class="ind"></div>
     <span id="live-label">connecting…</span>
   </div>
 </header>
 
-<div class="stats-bar" id="stats-bar">
-  <span>Unique faces: <strong id="s-unique">—</strong></span>
-  <span>Identified: <strong id="s-identified">—</strong></span>
-  <span>Unknown: <strong id="s-unknown">—</strong></span>
-  <span>Last refresh: <strong id="s-refresh">—</strong></span>
+<div class="stats-bar">
+  <span>Unique: <strong id="s-unique">—</strong></span>
+  <span>Identified: <strong id="s-id">—</strong></span>
+  <span>Unknown: <strong id="s-unk">—</strong></span>
+  <span>Refreshed: <strong id="s-time">—</strong></span>
 </div>
 
-<main>
-  <!-- Left: Unidentified -->
-  <div class="col-unknown">
-    <div class="col-header">
-      <h2>Unidentified</h2>
-      <span class="counter-badge" id="unknown-count">0</span>
+<div class="tabs">
+  <div class="tab active" data-tab="lab">Lab</div>
+  <div class="tab" data-tab="suggestions">Suggestions <span class="tab-badge" id="sug-badge" style="display:none">0</span></div>
+  <div class="tab" data-tab="dashboard">Dashboard</div>
+</div>
+
+<!-- ═══ TAB: LAB ═══ -->
+<div class="tab-content active" id="tab-lab">
+  <div class="lab-layout">
+    <div class="col-unknown">
+      <div class="col-header">
+        <h2>Unidentified</h2>
+        <span class="badge" id="unk-count">0</span>
+      </div>
+      <div class="face-grid" id="unknown-grid">
+        <div class="empty-hint">No unidentified faces</div>
+      </div>
     </div>
-    <div class="face-grid" id="unknown-grid">
-      <div class="empty-hint">No unidentified faces yet</div>
+    <div class="col-known">
+      <div class="col-header">
+        <h2>Known persons</h2>
+        <span class="badge" id="known-count">0</span>
+      </div>
+      <div id="persons-list"></div>
+      <div class="new-person-zone" id="new-zone">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+          <line x1="19" y1="3" x2="19" y2="9"/><line x1="16" y1="6" x2="22" y2="6"/>
+        </svg>
+        Drop face here to create new person
+      </div>
     </div>
   </div>
+</div>
 
-  <!-- Right: Known persons -->
-  <div class="col-known" id="known-col">
-    <div class="col-header">
-      <h2>Known persons</h2>
-      <span class="counter-badge" id="persons-count">0</span>
+<!-- ═══ TAB: SUGGESTIONS ═══ -->
+<div class="tab-content" id="tab-suggestions">
+  <div class="suggestions-content">
+    <p class="suggestions-intro">
+      <strong>Automatic face clustering</strong> — DBSCAN groups unidentified faces by embedding similarity.
+      Assign a name to confirm a cluster, or dismiss to teach the system these are different people.
+    </p>
+    <div id="suggestions-list"></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: DASHBOARD ═══ -->
+<div class="tab-content" id="tab-dashboard">
+  <div class="dashboard-content" id="dashboard-content">
+    <div class="stat-grid">
+      <div class="stat-box"><div class="val" id="d-total">—</div><div class="lbl">Total faces enrolled</div></div>
+      <div class="stat-box"><div class="val" id="d-identified">—</div><div class="lbl">Identified faces</div></div>
+      <div class="stat-box"><div class="val" id="d-top-label">—</div><div class="lbl">Most seen person</div></div>
     </div>
-
-    <div id="persons-list"></div>
-
-    <div class="new-person-zone" id="new-person-zone">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
-        <line x1="19" y1="3" x2="19" y2="9"/><line x1="16" y1="6" x2="22" y2="6"/>
-      </svg>
-      Drop face here to create new person
+    <div class="chart-card wide">
+      <h3>Faces enrolled over time</h3>
+      <canvas id="chart-timeline"></canvas>
+    </div>
+    <div class="chart-card wide">
+      <h3>Top 10 by appearances</h3>
+      <canvas id="chart-top10"></canvas>
     </div>
   </div>
-</main>
+</div>
 
-<!-- Modal for naming a new person -->
+<!-- Modal -->
 <div class="modal-overlay" id="modal">
   <div class="modal-box">
     <h3>Name this person</h3>
-    <p>Enter a label for the dropped face. All future detections of this face will be grouped under this name.</p>
-    <input type="text" id="modal-input" placeholder="e.g. Alice, Bob…" autocomplete="off" />
+    <p>All faces in this group will be tagged with this name.</p>
+    <input type="text" id="modal-input" placeholder="e.g. Alice…" autocomplete="off" />
     <div class="modal-actions">
-      <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
-      <button class="btn btn-primary" id="modal-confirm">Assign</button>
+      <button class="btn btn-no" id="modal-cancel">Cancel</button>
+      <button class="btn btn-ok" id="modal-confirm">Assign</button>
     </div>
   </div>
 </div>
 
 <script>
-// ─── State ───────────────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 let faces = [];
+let suggestions = [];
 let dragFaceId = null;
+let chartTimeline = null;
+let chartTop10 = null;
+
+const PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(`<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#1c2128"/><circle cx="50" cy="38" r="18" fill="#30363d"/><ellipse cx="50" cy="82" rx="26" ry="20" fill="#30363d"/></svg>`)}`;
+
+// ─── Tab switching ────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+    if (tab.dataset.tab === 'dashboard') loadDashboard();
+    if (tab.dataset.tab === 'suggestions') loadSuggestions();
+  });
+});
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-async function apiFaces()      { return fetch('/api/faces').then(r => r.ok ? r.json() : []); }
-async function apiHealth()     { return fetch('/api/health').then(r => r.ok ? r.json() : null); }
-async function apiLabel(id, label) {
-  return fetch(`/api/faces/${id}/label`, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({label})
+const api = {
+  faces:    () => fetch('/api/faces').then(r => r.ok ? r.json() : []),
+  health:   () => fetch('/api/health').then(r => r.ok ? r.json() : null),
+  label:    (id, label) => fetch(`/api/faces/${id}/label`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label}) }),
+  unlabel:  (id) => fetch(`/api/faces/${id}/label`, { method:'DELETE' }),
+  suggestions: () => fetch('/api/suggestions').then(r => r.ok ? r.json() : []),
+  accept:   (face_ids, label) => fetch('/api/suggestions/accept', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids, label}) }),
+  reject:   (face_ids) => fetch('/api/suggestions/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids}) }),
+  dashboard: () => fetch('/api/dashboard').then(r => r.ok ? r.json() : null),
+};
+const thumb = id => `/api/faces/${id}/thumb`;
+
+// ─── Main load ────────────────────────────────────────────────────────────────
+async function loadAll() {
+  const [data, health] = await Promise.all([api.faces(), api.health()]);
+  faces = data || [];
+  updateBadge(health);
+  renderLab();
+  document.getElementById('s-time').textContent = new Date().toLocaleTimeString();
+  // Refresh suggestions count in background
+  api.suggestions().then(s => {
+    suggestions = s || [];
+    const badge = document.getElementById('sug-badge');
+    if (suggestions.length > 0) {
+      badge.textContent = suggestions.length;
+      badge.style.display = 'inline-flex';
+    } else {
+      badge.style.display = 'none';
+    }
+    if (document.getElementById('tab-suggestions').classList.contains('active')) {
+      renderSuggestions();
+    }
   });
 }
-async function apiClearLabel(id) {
-  return fetch(`/api/faces/${id}/label`, { method: 'DELETE' });
-}
 
-function thumbUrl(id) { return `/api/faces/${id}/thumb`; }
-
-// ─── Placeholder SVG (data URI) ───────────────────────────────────────────────
-const PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(`
-<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <rect width="100" height="100" fill="%231c2128"/>
-  <circle cx="50" cy="38" r="18" fill="%2330363d"/>
-  <ellipse cx="50" cy="82" rx="26" ry="20" fill="%2330363d"/>
-</svg>`)}`;
-
-// ─── Initial load ─────────────────────────────────────────────────────────────
-async function loadAll() {
-  const [data, health] = await Promise.all([apiFaces(), apiHealth()]);
-  faces = data || [];
-  updateLiveBadge(health);
-  render();
-  document.getElementById('s-refresh').textContent = new Date().toLocaleTimeString();
-}
-
-function updateLiveBadge(health) {
+function updateBadge(health) {
   const badge = document.getElementById('live-badge');
-  const label = document.getElementById('live-label');
-  if (health) {
-    badge.classList.add('active');
-    label.textContent = `${health.faces} face${health.faces !== 1 ? 's' : ''} enrolled`;
-  } else {
-    badge.classList.remove('active');
-    label.textContent = 'API unreachable';
-  }
+  const lbl   = document.getElementById('live-label');
+  if (health) { badge.classList.add('active'); lbl.textContent = `${health.faces} enrolled`; }
+  else        { badge.classList.remove('active'); lbl.textContent = 'API offline'; }
 }
 
-// ─── Render ───────────────────────────────────────────────────────────────────
-function render() {
+// ─── LAB render ───────────────────────────────────────────────────────────────
+function renderLab() {
   const unknown = faces.filter(f => !f.label);
   const byLabel = {};
-  faces.filter(f => f.label).forEach(f => {
-    (byLabel[f.label] ||= []).push(f);
-  });
+  faces.filter(f => f.label).forEach(f => { (byLabel[f.label] ||= []).push(f); });
 
-  // Stats bar
-  document.getElementById('s-unique').textContent      = faces.length;
-  document.getElementById('s-identified').textContent  = faces.filter(f => f.label).length;
-  document.getElementById('s-unknown').textContent     = unknown.length;
-  document.getElementById('unknown-count').textContent = unknown.length;
-  document.getElementById('persons-count').textContent = Object.keys(byLabel).length;
+  document.getElementById('s-unique').textContent = faces.length;
+  document.getElementById('s-id').textContent     = faces.filter(f => f.label).length;
+  document.getElementById('s-unk').textContent    = unknown.length;
+  document.getElementById('unk-count').textContent  = unknown.length;
+  document.getElementById('known-count').textContent = Object.keys(byLabel).length;
 
-  renderUnknown(unknown);
-  renderPersons(byLabel);
-}
-
-function renderUnknown(unknown) {
   const grid = document.getElementById('unknown-grid');
   grid.innerHTML = '';
-  if (!unknown.length) {
-    grid.innerHTML = '<div class="empty-hint">All faces are identified ✓</div>';
-    return;
-  }
-  unknown.forEach(f => grid.appendChild(makeFaceCard(f, true)));
-}
+  if (!unknown.length) { grid.innerHTML = '<div class="empty-hint">All faces identified ✓</div>'; }
+  else unknown.forEach(f => grid.appendChild(makeFaceCard(f)));
 
-function renderPersons(byLabel) {
   const list = document.getElementById('persons-list');
   list.innerHTML = '';
-  const labels = Object.keys(byLabel).sort();
-  labels.forEach(label => {
-    list.appendChild(makePersonGroup(label, byLabel[label]));
-  });
+  Object.keys(byLabel).sort().forEach(label => list.appendChild(makePersonGroup(label, byLabel[label])));
 }
 
-// ─── Face card ────────────────────────────────────────────────────────────────
-function makeFaceCard(face, showRemove = false) {
+function makeFaceCard(face, small = false) {
   const card = document.createElement('div');
   card.className = 'face-card';
   card.draggable = true;
   card.dataset.faceId = face.id;
 
-  const img = document.createElement('img');
-  img.src = thumbUrl(face.id);
-  img.alt = face.label || `Face #${face.id}`;
-  img.onerror = () => { img.src = PLACEHOLDER; };
+  const img = Object.assign(document.createElement('img'), { alt: `#${face.id}`, src: thumb(face.id) });
+  img.onerror = () => img.src = PLACEHOLDER;
 
   const footer = document.createElement('div');
   footer.className = 'card-footer';
-  footer.innerHTML = `<span class="card-id">#${face.id}</span>`;
-  if (face.label) {
-    footer.innerHTML += ` · ${face.label}`;
-  }
+  footer.innerHTML = `<span class="card-id">#${face.id}</span>${face.label ? ` · ${face.label}` : ''}`;
 
   card.appendChild(img);
   card.appendChild(footer);
 
-  if (showRemove && face.label) {
+  if (face.label) {
     const rm = document.createElement('button');
-    rm.className = 'card-remove';
-    rm.title = 'Remove label';
-    rm.textContent = '×';
-    rm.addEventListener('click', async e => {
-      e.stopPropagation();
-      await apiClearLabel(face.id);
-      loadAll();
-    });
+    rm.className = 'card-rm'; rm.title = 'Remove label'; rm.textContent = '×';
+    rm.addEventListener('click', async e => { e.stopPropagation(); await api.unlabel(face.id); loadAll(); });
     card.appendChild(rm);
   }
 
@@ -411,171 +348,259 @@ function makeFaceCard(face, showRemove = false) {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(face.id));
   });
-  card.addEventListener('dragend', () => {
-    card.classList.remove('dragging');
-    dragFaceId = null;
-  });
-
+  card.addEventListener('dragend', () => { card.classList.remove('dragging'); dragFaceId = null; });
   return card;
 }
 
-// ─── Person group ─────────────────────────────────────────────────────────────
 function makePersonGroup(label, groupFaces) {
   const group = document.createElement('div');
   group.className = 'person-group';
 
-  // Avatar from first face
-  const firstFace = groupFaces[0];
-  const avatarEl = firstFace
-    ? Object.assign(document.createElement('img'), {
-        className: 'person-avatar',
-        src: thumbUrl(firstFace.id),
-        alt: label,
-      })
-    : (() => {
-        const d = document.createElement('div');
-        d.className = 'person-avatar-placeholder';
-        d.textContent = label[0]?.toUpperCase() || '?';
-        return d;
-      })();
-  if (firstFace && avatarEl.tagName === 'IMG') {
-    avatarEl.onerror = () => {
-      const ph = document.createElement('div');
-      ph.className = 'person-avatar-placeholder';
-      ph.textContent = label[0]?.toUpperCase() || '?';
-      avatarEl.replaceWith(ph);
-    };
+  // Avatar
+  const first = groupFaces[0];
+  let avatar;
+  if (first) {
+    avatar = Object.assign(document.createElement('img'), { className:'person-avatar', src: thumb(first.id), alt: label });
+    avatar.onerror = () => { const ph = document.createElement('div'); ph.className='person-avatar-ph'; ph.textContent=label[0]?.toUpperCase()||'?'; avatar.replaceWith(ph); };
+  } else {
+    avatar = document.createElement('div'); avatar.className='person-avatar-ph'; avatar.textContent=label[0]?.toUpperCase()||'?';
   }
 
-  // Inline-editable name
-  const nameInput = document.createElement('input');
-  nameInput.className = 'person-name';
-  nameInput.type = 'text';
-  nameInput.value = label;
-  nameInput.title = 'Double-click to rename';
-  nameInput.readOnly = true;
-  nameInput.addEventListener('dblclick', () => {
-    nameInput.readOnly = false;
-    nameInput.focus();
-    nameInput.select();
-  });
+  // Name input
+  const nameInput = Object.assign(document.createElement('input'), { className:'person-name', type:'text', value:label, title:'Double-click to rename', readOnly:true });
+  nameInput.addEventListener('dblclick', () => { nameInput.readOnly=false; nameInput.focus(); nameInput.select(); });
   nameInput.addEventListener('blur', async () => {
     const newLabel = nameInput.value.trim();
-    if (newLabel && newLabel !== label) {
-      // Relabel all faces in this group
-      await Promise.all(groupFaces.map(f => apiLabel(f.id, newLabel)));
-      loadAll();
-    } else {
-      nameInput.value = label;
-    }
-    nameInput.readOnly = true;
+    if (newLabel && newLabel !== label) { await Promise.all(groupFaces.map(f => api.label(f.id, newLabel))); loadAll(); }
+    else { nameInput.value=label; }
+    nameInput.readOnly=true;
   });
-  nameInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') nameInput.blur();
-    if (e.key === 'Escape') { nameInput.value = label; nameInput.blur(); }
-  });
+  nameInput.addEventListener('keydown', e => { if(e.key==='Enter') nameInput.blur(); if(e.key==='Escape'){nameInput.value=label;nameInput.blur();} });
 
-  // Delete person button
-  const delBtn = document.createElement('button');
-  delBtn.className = 'btn-icon';
-  delBtn.title = 'Remove all labels for this person';
-  delBtn.textContent = '× Remove';
+  // Delete
+  const delBtn = Object.assign(document.createElement('button'), { className:'btn-sm', textContent:'× Remove', title:`Remove label "${label}"` });
   delBtn.addEventListener('click', async () => {
-    if (!confirm(`Remove label "${label}" from ${groupFaces.length} face(s)?`)) return;
-    await Promise.all(groupFaces.map(f => apiClearLabel(f.id)));
+    if(!confirm(`Remove label "${label}" from ${groupFaces.length} face(s)?`)) return;
+    await Promise.all(groupFaces.map(f => api.unlabel(f.id)));
     loadAll();
   });
 
   const header = document.createElement('div');
   header.className = 'person-header';
-  header.appendChild(avatarEl);
-  header.appendChild(nameInput);
+  const actions = document.createElement('div'); actions.className='person-actions'; actions.appendChild(delBtn);
+  header.append(avatar, nameInput, actions);
 
-  const actions = document.createElement('div');
-  actions.className = 'person-actions';
-  actions.appendChild(delBtn);
-  header.appendChild(actions);
+  const facesDiv = document.createElement('div'); facesDiv.className='person-faces';
+  groupFaces.forEach(f => facesDiv.appendChild(makeFaceCard(f)));
 
-  // Faces inside the group
-  const facesDiv = document.createElement('div');
-  facesDiv.className = 'person-faces';
-  groupFaces.forEach(f => facesDiv.appendChild(makeFaceCard(f, true)));
+  const hint = document.createElement('div'); hint.className='drop-hint'; hint.textContent='Drop faces here…';
 
-  const dropHint = document.createElement('div');
-  dropHint.className = 'person-drop-hint';
-  dropHint.textContent = 'Drop a face here…';
-
-  group.appendChild(header);
-  group.appendChild(facesDiv);
-  group.appendChild(dropHint);
-
-  // Drop zone
-  makeDropZone(group, async () => {
-    if (dragFaceId == null) return;
-    await apiLabel(dragFaceId, label);
-    loadAll();
-  });
-
+  group.append(header, facesDiv, hint);
+  makeDropZone(group, async () => { if(dragFaceId==null) return; await api.label(dragFaceId, label); loadAll(); });
   return group;
 }
 
-// ─── Drop zone helper ─────────────────────────────────────────────────────────
+// ─── Drop zones ───────────────────────────────────────────────────────────────
 function makeDropZone(el, onDrop) {
-  el.addEventListener('dragover', e => {
-    e.preventDefault();
-    el.classList.add('drop-target');
-  });
-  el.addEventListener('dragleave', e => {
-    if (!el.contains(e.relatedTarget)) el.classList.remove('drop-target');
-  });
-  el.addEventListener('drop', async e => {
-    e.preventDefault();
-    el.classList.remove('drop-target');
-    await onDrop();
-  });
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop-target'); });
+  el.addEventListener('dragleave', e => { if(!el.contains(e.relatedTarget)) el.classList.remove('drop-target'); });
+  el.addEventListener('drop', async e => { e.preventDefault(); el.classList.remove('drop-target'); await onDrop(); });
 }
-
-// ─── New person drop zone ─────────────────────────────────────────────────────
-const newZone = document.getElementById('new-person-zone');
-makeDropZone(newZone, () => {
-  if (dragFaceId == null) return;
-  openModal(dragFaceId);
-});
+makeDropZone(document.getElementById('new-zone'), () => { if(dragFaceId!=null) openModal(dragFaceId); });
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-let _modalFaceId = null;
-const modal     = document.getElementById('modal');
+let _modalFaceIds = null;
+const modal      = document.getElementById('modal');
 const modalInput = document.getElementById('modal-input');
 
-function openModal(faceId) {
-  _modalFaceId = faceId;
+function openModal(faceIdOrIds) {
+  _modalFaceIds = Array.isArray(faceIdOrIds) ? faceIdOrIds : [faceIdOrIds];
   modalInput.value = '';
   modal.classList.add('open');
-  setTimeout(() => modalInput.focus(), 50);
+  setTimeout(() => modalInput.focus(), 40);
 }
-
-function closeModal() {
-  modal.classList.remove('open');
-  _modalFaceId = null;
-}
+function closeModal() { modal.classList.remove('open'); _modalFaceIds = null; }
 
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
 document.getElementById('modal-confirm').addEventListener('click', async () => {
   const label = modalInput.value.trim();
-  if (!label || _modalFaceId == null) return;
-  await apiLabel(_modalFaceId, label);
+  if (!label || !_modalFaceIds) return;
+  await Promise.all(_modalFaceIds.map(id => api.label(id, label)));
   closeModal();
   loadAll();
 });
-modalInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('modal-confirm').click();
-  if (e.key === 'Escape') closeModal();
-});
-modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+modalInput.addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('modal-confirm').click(); if(e.key==='Escape') closeModal(); });
+modal.addEventListener('click', e => { if(e.target===modal) closeModal(); });
 
-// ─── Auto-refresh every 6 seconds ────────────────────────────────────────────
+// ─── SUGGESTIONS render ───────────────────────────────────────────────────────
+async function loadSuggestions() {
+  suggestions = await api.suggestions() || [];
+  renderSuggestions();
+  const badge = document.getElementById('sug-badge');
+  if (suggestions.length > 0) { badge.textContent = suggestions.length; badge.style.display='inline-flex'; }
+  else badge.style.display='none';
+}
+
+function renderSuggestions() {
+  const list = document.getElementById('suggestions-list');
+  list.innerHTML = '';
+  if (!suggestions.length) {
+    list.innerHTML = '<div class="no-suggestions"><span>🎉</span>No suggestions — all unlabeled faces look distinct, or there are too few to cluster.</div>';
+    return;
+  }
+  suggestions.forEach((sug, idx) => {
+    list.appendChild(makeSuggestionCard(sug, idx));
+  });
+}
+
+function makeSuggestionCard(sug, idx) {
+  const card = document.createElement('div');
+  card.className = 'suggestion-card';
+  card.id = `sug-${idx}`;
+
+  // Face thumbnails
+  const thumbsDiv = document.createElement('div');
+  thumbsDiv.className = 'suggestion-faces';
+  sug.face_ids.slice(0, 5).forEach(id => {
+    const fc = document.createElement('div');
+    fc.className = 'face-card';
+    const img = Object.assign(document.createElement('img'), { src: `/api/faces/${id}/thumb`, alt: `#${id}` });
+    img.onerror = () => img.src = PLACEHOLDER;
+    const footer = document.createElement('div'); footer.className='card-footer'; footer.innerHTML=`<span class="card-id">#${id}</span>`;
+    fc.append(img, footer);
+    thumbsDiv.appendChild(fc);
+  });
+  if (sug.face_ids.length > 5) {
+    const more = document.createElement('div');
+    more.style.cssText = 'align-self:center;color:var(--text-dim);font-size:12px;white-space:nowrap';
+    more.textContent = `+${sug.face_ids.length - 5} more`;
+    thumbsDiv.appendChild(more);
+  }
+
+  // Info + actions
+  const info = document.createElement('div');
+  info.className = 'suggestion-info';
+
+  const pct = Math.round(sug.similarity * 100);
+  info.innerHTML = `
+    <div class="suggestion-sim">Similarity: <strong style="color:var(--text-bright)">${pct}%</strong> · ${sug.face_ids.length} faces</div>
+    <div class="sim-bar"><div class="sim-bar-fill" style="width:${pct}%"></div></div>
+  `;
+
+  const nameRow = document.createElement('div');
+  nameRow.className = 'suggestion-name-row';
+  const nameInput = Object.assign(document.createElement('input'), { type:'text', placeholder:'Enter name to confirm…', autocomplete:'off' });
+  nameInput.addEventListener('keydown', e => { if(e.key==='Enter') acceptBtn.click(); });
+
+  const acceptBtn = Object.assign(document.createElement('button'), { className:'btn btn-ok', textContent:'✓ Same person' });
+  acceptBtn.addEventListener('click', async () => {
+    const label = nameInput.value.trim() || `person_${sug.face_ids[0]}`;
+    await api.accept(sug.face_ids, label);
+    card.remove();
+    loadAll();
+  });
+
+  const rejectBtn = Object.assign(document.createElement('button'), { className:'btn btn-no', textContent:'✗ Different' });
+  rejectBtn.addEventListener('click', async () => {
+    await api.reject(sug.face_ids);
+    card.remove();
+    suggestions = suggestions.filter((_, i) => i !== idx);
+    const badge = document.getElementById('sug-badge');
+    if (suggestions.length > 0) badge.textContent = suggestions.length;
+    else badge.style.display = 'none';
+  });
+
+  const actDiv = document.createElement('div'); actDiv.className='suggestion-actions';
+  actDiv.append(acceptBtn, rejectBtn);
+  nameRow.append(nameInput, actDiv);
+  info.appendChild(nameRow);
+
+  card.append(thumbsDiv, info);
+  return card;
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const data = await api.dashboard();
+  if (!data) return;
+
+  // Stat boxes
+  document.getElementById('d-total').textContent = data.total_faces;
+  const identified = faces.filter(f => f.label).length;
+  document.getElementById('d-identified').textContent = identified;
+  document.getElementById('d-top-label').textContent = data.top10?.[0]?.label ?? '—';
+
+  // Cumulative timeline
+  let cumulative = 0;
+  const timeLabels = (data.timeline || []).map(d => d.date);
+  const timeCounts = (data.timeline || []).map(d => { cumulative += d.count; return cumulative; });
+
+  // Line chart
+  if (chartTimeline) chartTimeline.destroy();
+  chartTimeline = new Chart(document.getElementById('chart-timeline').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: timeLabels,
+      datasets: [{
+        label: 'Cumulative faces',
+        data: timeCounts,
+        borderColor: '#457b9d',
+        backgroundColor: 'rgba(69,123,157,0.12)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 3,
+        pointBackgroundColor: '#457b9d',
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#6e7681', maxTicksLimit: 10 }, grid: { color: '#21262d' } },
+        y: { ticks: { color: '#6e7681', precision: 0 }, grid: { color: '#21262d' }, beginAtZero: true },
+      }
+    }
+  });
+
+  // Bar chart — top 10
+  const top10 = data.top10 || [];
+  if (chartTop10) chartTop10.destroy();
+  chartTop10 = new Chart(document.getElementById('chart-top10').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: top10.map(f => f.label),
+      datasets: [{
+        label: 'Appearances',
+        data: top10.map(f => f.count),
+        backgroundColor: top10.map((_, i) =>
+          `hsla(${200 + i * 18}, 60%, 55%, 0.82)`
+        ),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x} appearances` } }
+      },
+      scales: {
+        x: { ticks: { color: '#6e7681', precision: 0 }, grid: { color: '#21262d' }, beginAtZero: true },
+        y: { ticks: { color: '#c9d1d9', font: { size: 12 } }, grid: { display: false } },
+      }
+    }
+  });
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+Chart.defaults.color = '#6e7681';
+Chart.defaults.borderColor = '#21262d';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
 loadAll();
-setInterval(loadAll, 6000);
+setInterval(loadAll, 7000);
 </script>
 </body>
 </html>

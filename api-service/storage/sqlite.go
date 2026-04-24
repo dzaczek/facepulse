@@ -45,6 +45,19 @@ func New(path string) (*DB, error) {
 	return &DB{db: db}, nil
 }
 
+// TimePoint is used by the dashboard timeline chart.
+type TimePoint struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+// FaceTop is used by the dashboard top-10 bar chart.
+type FaceTop struct {
+	FaceID int64  `json:"face_id"`
+	Label  string `json:"label"`
+	Count  int    `json:"count"`
+}
+
 func migrate(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS faces (
@@ -59,6 +72,12 @@ func migrate(db *sql.DB) error {
 			confidence REAL    NOT NULL,
 			bbox       TEXT    NOT NULL,
 			seen_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS negative_pairs (
+			face_id_a  INTEGER NOT NULL,
+			face_id_b  INTEGER NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (face_id_a, face_id_b)
 		);
 		CREATE INDEX IF NOT EXISTS idx_appearances_seen_at ON appearances(seen_at);
 		CREATE INDEX IF NOT EXISTS idx_appearances_face_id ON appearances(face_id);
@@ -218,4 +237,124 @@ func (d *DB) queryStats(query string, arg interface{}) ([]StatRow, error) {
 		stats = append(stats, s)
 	}
 	return stats, rows.Err()
+}
+
+// ─── Learning / Clustering ────────────────────────────────────────────────────
+
+func (d *DB) UnlabeledEmbeddings() ([]Face, error) {
+	rows, err := d.db.Query(
+		`SELECT id, embedding FROM faces WHERE label = '' OR label IS NULL`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var faces []Face
+	for rows.Next() {
+		var f Face
+		var embJSON string
+		if err := rows.Scan(&f.ID, &embJSON); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(embJSON), &f.Embedding)
+		faces = append(faces, f)
+	}
+	return faces, rows.Err()
+}
+
+func (d *DB) GetEmbedding(id int64) ([]float64, error) {
+	var embJSON string
+	err := d.db.QueryRow(`SELECT embedding FROM faces WHERE id = ?`, id).Scan(&embJSON)
+	if err != nil {
+		return nil, err
+	}
+	var emb []float64
+	return emb, json.Unmarshal([]byte(embJSON), &emb)
+}
+
+func (d *DB) UpdateEmbedding(id int64, emb []float64) error {
+	embJSON, err := json.Marshal(emb)
+	if err != nil {
+		return err
+	}
+	_, err = d.db.Exec(`UPDATE faces SET embedding = ? WHERE id = ?`, string(embJSON), id)
+	return err
+}
+
+func (d *DB) CreateNegativePair(a, b int64) error {
+	lo, hi := a, b
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	_, err := d.db.Exec(
+		`INSERT OR IGNORE INTO negative_pairs (face_id_a, face_id_b) VALUES (?, ?)`, lo, hi,
+	)
+	return err
+}
+
+func (d *DB) NegativePairs() ([][2]int64, error) {
+	rows, err := d.db.Query(`SELECT face_id_a, face_id_b FROM negative_pairs`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pairs [][2]int64
+	for rows.Next() {
+		var p [2]int64
+		if err := rows.Scan(&p[0], &p[1]); err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, p)
+	}
+	return pairs, rows.Err()
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+func (d *DB) DashboardTimeline() ([]TimePoint, error) {
+	rows, err := d.db.Query(`
+		SELECT date(created_at) as date, COUNT(*) as cnt
+		FROM faces
+		GROUP BY date(created_at)
+		ORDER BY date
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pts []TimePoint
+	for rows.Next() {
+		var p TimePoint
+		if err := rows.Scan(&p.Date, &p.Count); err != nil {
+			return nil, err
+		}
+		pts = append(pts, p)
+	}
+	return pts, rows.Err()
+}
+
+func (d *DB) DashboardTop10() ([]FaceTop, error) {
+	rows, err := d.db.Query(`
+		SELECT f.id,
+		       COALESCE(NULLIF(f.label,''), '#' || CAST(f.id AS TEXT)) as label,
+		       COUNT(a.id) as cnt
+		FROM faces f
+		LEFT JOIN appearances a ON a.face_id = f.id
+		GROUP BY f.id
+		ORDER BY cnt DESC
+		LIMIT 10
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tops []FaceTop
+	for rows.Next() {
+		var t FaceTop
+		if err := rows.Scan(&t.FaceID, &t.Label, &t.Count); err != nil {
+			return nil, err
+		}
+		tops = append(tops, t)
+	}
+	return tops, rows.Err()
 }

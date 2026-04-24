@@ -46,6 +46,32 @@ func (m *Matcher) Len() int {
 
 // Match returns best matching face ID and similarity score.
 // Returns -1 if no face exceeds the threshold.
+// Update replaces the stored embedding for an existing face (online learning).
+func (m *Matcher) Update(id int64, embedding []float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.faces {
+		if m.faces[i].ID == id {
+			m.faces[i].Embedding = embedding
+			return
+		}
+	}
+}
+
+// GetEmbedding returns the current in-memory embedding for a face, or nil if not found.
+func (m *Matcher) GetEmbedding(id int64) []float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, f := range m.faces {
+		if f.ID == id {
+			return f.Embedding
+		}
+	}
+	return nil
+}
+
+// Match returns best matching face ID and similarity score.
+// Returns -1 if no face exceeds the threshold.
 func (m *Matcher) Match(embedding []float64) (int64, float64) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
