@@ -239,6 +239,17 @@ func (d *DB) queryStats(query string, arg interface{}) ([]StatRow, error) {
 	return stats, rows.Err()
 }
 
+func (d *DB) DeleteFace(id int64) error {
+	if _, err := d.db.Exec(`DELETE FROM appearances WHERE face_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := d.db.Exec(`DELETE FROM negative_pairs WHERE face_id_a = ? OR face_id_b = ?`, id, id); err != nil {
+		return err
+	}
+	_, err := d.db.Exec(`DELETE FROM faces WHERE id = ?`, id)
+	return err
+}
+
 // ─── Learning / Clustering ────────────────────────────────────────────────────
 
 func (d *DB) UnlabeledEmbeddings() ([]Face, error) {

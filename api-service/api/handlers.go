@@ -62,6 +62,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/faces/{id}/appearances", s.handleFaceAppearances)
 	mux.HandleFunc("GET /api/faces/{id}/thumb", s.handleThumb)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
+	mux.HandleFunc("DELETE /api/faces/{id}", s.handleDeleteFace)
+	mux.HandleFunc("POST /api/faces/delete-batch", s.handleDeleteFaces)
 	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
 	mux.HandleFunc("POST /api/suggestions/accept", s.handleAcceptSuggestion)
 	mux.HandleFunc("POST /api/suggestions/reject", s.handleRejectSuggestion)
@@ -167,6 +169,42 @@ func (s *Server) handleSetLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteFace(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	s.deleteFace(id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteFaces(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		FaceIDs []int64 `json:"face_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	for _, id := range body.FaceIDs {
+		s.deleteFace(id)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) deleteFace(id int64) {
+	s.matcher.Remove(id)
+	if err := s.db.DeleteFace(id); err != nil {
+		log.Printf("delete face %d: %v", id, err)
+	}
+	_ = os.Remove(filepath.Join(s.dataDir, "thumbs", fmt.Sprintf("%d.jpg", id)))
+	s.metrics.UniqueFaces.Dec()
+	s.mu.Lock()
+	delete(s.lastSeen, id)
+	s.mu.Unlock()
 }
 
 func (s *Server) handleClearLabel(w http.ResponseWriter, r *http.Request) {

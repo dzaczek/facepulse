@@ -64,6 +64,24 @@ header h1 span { color: var(--accent); }
 .face-card:hover .card-rm { display: flex; }
 .card-rm:hover { background: var(--accent); color: #fff; }
 
+/* ── Selection on unknown cards ── */
+.face-card .sel-check { position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(13,17,23,.7); border: 1.5px solid var(--border); display: none; align-items: center; justify-content: center; pointer-events: none; transition: all .15s; }
+.face-card:hover .sel-check { display: flex; }
+.face-card.selected .sel-check { display: flex; background: var(--accent2); border-color: var(--accent2); color: #fff; font-size: 11px; }
+.face-card.selected .sel-check::after { content: '✓'; }
+.face-card.selected { border-color: var(--accent2); box-shadow: 0 0 0 2px rgba(69,123,157,.35); }
+
+/* Delete button on unidentified cards */
+.card-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; background: rgba(0,0,0,.65); border: none; border-radius: 50%; color: var(--text-dim); cursor: pointer; font-size: 13px; display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.face-card:hover .card-del { display: flex; }
+.card-del:hover { background: var(--accent); color: #fff; }
+
+/* Bulk action bar */
+.bulk-bar { display: none; align-items: center; gap: 8px; padding: 6px 8px; background: rgba(69,123,157,.12); border: 1px solid rgba(69,123,157,.3); border-radius: 8px; margin-bottom: 10px; font-size: 12px; color: var(--text-dim); }
+.bulk-bar.visible { display: flex; }
+.btn-danger { border-color: var(--accent) !important; color: var(--accent) !important; }
+.btn-danger:hover { background: var(--accent) !important; color: #fff !important; }
+
 /* ── Icon-size card (used inside person groups) ── */
 .face-card.icon { width: 48px; height: 48px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
 .face-card.icon img { width: 48px; height: 48px; aspect-ratio: 1; }
@@ -186,6 +204,12 @@ canvas { max-height: 280px; }
       <div class="col-header">
         <h2>Unidentified</h2>
         <span class="badge" id="unk-count">0</span>
+        <button class="btn-sm" id="btn-sel-all" style="margin-left:auto" title="Select all">☑ All</button>
+        <button class="btn-sm" id="btn-sel-none" title="Deselect all">☐</button>
+      </div>
+      <div class="bulk-bar" id="bulk-bar">
+        <span id="bulk-label">0 selected</span>
+        <button class="btn-sm btn-danger" id="btn-del-sel">🗑 Delete selected</button>
       </div>
       <div class="face-grid" id="unknown-grid">
         <div class="empty-hint">No unidentified faces</div>
@@ -270,6 +294,7 @@ let suggestions = [];
 let dragFaceId = null;
 let chartTimeline = null;
 let chartTop10 = null;
+let selectedIds = new Set();
 
 const PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(`<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#1c2128"/><circle cx="50" cy="38" r="18" fill="#30363d"/><ellipse cx="50" cy="82" rx="26" ry="20" fill="#30363d"/></svg>`)}`;
 
@@ -289,8 +314,10 @@ document.querySelectorAll('.tab').forEach(tab => {
 const api = {
   faces:    () => fetch('/api/faces').then(r => r.ok ? r.json() : []),
   health:   () => fetch('/api/health').then(r => r.ok ? r.json() : null),
-  label:    (id, label) => fetch(`/api/faces/${id}/label`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label}) }),
-  unlabel:  (id) => fetch(`/api/faces/${id}/label`, { method:'DELETE' }),
+  label:      (id, label) => fetch(`/api/faces/${id}/label`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label}) }),
+  unlabel:    (id) => fetch(`/api/faces/${id}/label`, { method:'DELETE' }),
+  deleteFace: (id) => fetch(`/api/faces/${id}`, { method:'DELETE' }),
+  deleteBatch:(ids) => fetch('/api/faces/delete-batch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids: ids}) }),
   suggestions: () => fetch('/api/suggestions').then(r => r.ok ? r.json() : []),
   accept:   (face_ids, label) => fetch('/api/suggestions/accept', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids, label}) }),
   reject:   (face_ids) => fetch('/api/suggestions/reject', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({face_ids}) }),
@@ -340,19 +367,24 @@ function renderLab() {
   document.getElementById('unk-count').textContent  = unknown.length;
   document.getElementById('known-count').textContent = Object.keys(byLabel).length;
 
+  // Remove stale selections
+  selectedIds = new Set([...selectedIds].filter(id => unknown.some(f => f.id === id)));
+  updateBulkBar();
+
   const grid = document.getElementById('unknown-grid');
   grid.innerHTML = '';
   if (!unknown.length) { grid.innerHTML = '<div class="empty-hint">All faces identified ✓</div>'; }
-  else unknown.forEach(f => grid.appendChild(makeFaceCard(f)));
+  else unknown.forEach(f => grid.appendChild(makeFaceCard(f, { selectable: true })));
 
   const list = document.getElementById('persons-list');
   list.innerHTML = '';
   Object.keys(byLabel).sort().forEach(label => list.appendChild(makePersonGroup(label, byLabel[label])));
 }
 
-function makeFaceCard(face, { icon = false } = {}) {
+function makeFaceCard(face, { icon = false, selectable = false } = {}) {
   const card = document.createElement('div');
   card.className = icon ? 'face-card icon' : 'face-card';
+  if (selectable && selectedIds.has(face.id)) card.classList.add('selected');
   card.draggable = true;
   card.dataset.faceId = face.id;
 
@@ -367,7 +399,29 @@ function makeFaceCard(face, { icon = false } = {}) {
     card.appendChild(footer);
   }
 
-  if (face.label) {
+  // Checkbox overlay (unknown/selectable cards)
+  if (selectable) {
+    const chk = document.createElement('div');
+    chk.className = 'sel-check';
+    card.appendChild(chk);
+  }
+
+  // Delete button (unidentified cards only)
+  if (selectable && !face.label) {
+    const del = document.createElement('button');
+    del.className = 'card-del'; del.title = 'Delete face'; del.textContent = '🗑';
+    del.addEventListener('click', async e => {
+      e.stopPropagation();
+      await api.deleteFace(face.id);
+      selectedIds.delete(face.id);
+      updateBulkBar();
+      loadAll();
+    });
+    card.appendChild(del);
+  }
+
+  // Label-remove button (identified cards in person groups)
+  if (face.label && !selectable) {
     const rm = document.createElement('button');
     rm.className = 'card-rm'; rm.title = 'Remove label'; rm.textContent = '×';
     rm.addEventListener('click', async e => { e.stopPropagation(); await api.unlabel(face.id); loadAll(); });
@@ -390,9 +444,25 @@ function makeFaceCard(face, { icon = false } = {}) {
 
   if (icon) {
     card.addEventListener('click', () => { if (!_dragged) openLightbox(face); });
+  } else if (selectable) {
+    card.addEventListener('click', e => {
+      if (_dragged || e.target.closest('button')) return;
+      selectedIds.has(face.id) ? selectedIds.delete(face.id) : selectedIds.add(face.id);
+      card.classList.toggle('selected', selectedIds.has(face.id));
+      updateBulkBar();
+    });
   }
 
   return card;
+}
+
+function updateBulkBar() {
+  const bar   = document.getElementById('bulk-bar');
+  const label = document.getElementById('bulk-label');
+  const n = selectedIds.size;
+  bar.classList.toggle('visible', n > 0);
+  label.textContent = `${n} selected`;
+  document.getElementById('btn-del-sel').textContent = `🗑 Delete selected (${n})`;
 }
 
 function makePersonGroup(label, groupFaces) {
@@ -450,6 +520,24 @@ function makeDropZone(el, onDrop) {
   el.addEventListener('drop', async e => { e.preventDefault(); el.classList.remove('drop-target'); await onDrop(); });
 }
 makeDropZone(document.getElementById('new-zone'), () => { if(dragFaceId!=null) openModal(dragFaceId); });
+
+// ─── Unknown column bulk actions ──────────────────────────────────────────────
+document.getElementById('btn-sel-all').addEventListener('click', () => {
+  faces.filter(f => !f.label).forEach(f => selectedIds.add(f.id));
+  renderLab();
+});
+document.getElementById('btn-sel-none').addEventListener('click', () => {
+  selectedIds.clear();
+  renderLab();
+});
+document.getElementById('btn-del-sel').addEventListener('click', async () => {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} face(s)? This cannot be undone.`)) return;
+  await api.deleteBatch(ids);
+  selectedIds.clear();
+  loadAll();
+});
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 let _modalFaceIds = null;

@@ -46,6 +46,18 @@ func (m *Matcher) Len() int {
 
 // Match returns best matching face ID and similarity score.
 // Returns -1 if no face exceeds the threshold.
+// Remove deletes a face from the in-memory index.
+func (m *Matcher) Remove(id int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, f := range m.faces {
+		if f.ID == id {
+			m.faces = append(m.faces[:i], m.faces[i+1:]...)
+			return
+		}
+	}
+}
+
 // Update replaces the stored embedding for an existing face (online learning).
 func (m *Matcher) Update(id int64, embedding []float64) {
 	m.mu.Lock()
