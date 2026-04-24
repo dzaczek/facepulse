@@ -64,6 +64,25 @@ header h1 span { color: var(--accent); }
 .face-card:hover .card-rm { display: flex; }
 .card-rm:hover { background: var(--accent); color: #fff; }
 
+/* ── Icon-size card (used inside person groups) ── */
+.face-card.icon { width: 48px; height: 48px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
+.face-card.icon img { width: 48px; height: 48px; aspect-ratio: 1; }
+.face-card.icon .card-footer { display: none; }
+.face-card.icon .card-rm { width: 16px; height: 16px; font-size: 10px; top: 2px; right: 2px; }
+.face-card.icon:hover { transform: scale(1.12); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+
+/* ── Lightbox ── */
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); z-index: 300; display: none; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
+.lightbox.open { display: flex; }
+.lightbox-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; width: 320px; box-shadow: 0 40px 100px rgba(0,0,0,.8); animation: pop .18s ease; }
+@keyframes pop { from { transform: scale(.88); opacity:0 } to { transform: scale(1); opacity:1 } }
+.lightbox-img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.lightbox-footer { padding: 14px 16px; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); }
+.lightbox-id { font-size: 13px; font-weight: 700; color: var(--text-bright); }
+.lightbox-label { font-size: 12px; color: var(--text-dim); flex: 1; }
+.lightbox-close { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; flex-shrink: 0; }
+.lightbox-close:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── Person group ── */
 .person-group { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; transition: border-color .2s, box-shadow .2s; }
 .person-group.drop-target { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(69,123,157,.18); }
@@ -219,6 +238,18 @@ canvas { max-height: 280px; }
   </div>
 </div>
 
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox">
+  <div class="lightbox-box" id="lightbox-box">
+    <img class="lightbox-img" id="lightbox-img" alt="" />
+    <div class="lightbox-footer">
+      <span class="lightbox-id" id="lightbox-id"></span>
+      <span class="lightbox-label" id="lightbox-lbl"></span>
+      <button class="lightbox-close" id="lightbox-close">✕ Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal -->
 <div class="modal-overlay" id="modal">
   <div class="modal-box">
@@ -319,21 +350,22 @@ function renderLab() {
   Object.keys(byLabel).sort().forEach(label => list.appendChild(makePersonGroup(label, byLabel[label])));
 }
 
-function makeFaceCard(face, small = false) {
+function makeFaceCard(face, { icon = false } = {}) {
   const card = document.createElement('div');
-  card.className = 'face-card';
+  card.className = icon ? 'face-card icon' : 'face-card';
   card.draggable = true;
   card.dataset.faceId = face.id;
 
   const img = Object.assign(document.createElement('img'), { alt: `#${face.id}`, src: thumb(face.id) });
   img.onerror = () => img.src = PLACEHOLDER;
-
-  const footer = document.createElement('div');
-  footer.className = 'card-footer';
-  footer.innerHTML = `<span class="card-id">#${face.id}</span>${face.label ? ` · ${face.label}` : ''}`;
-
   card.appendChild(img);
-  card.appendChild(footer);
+
+  if (!icon) {
+    const footer = document.createElement('div');
+    footer.className = 'card-footer';
+    footer.innerHTML = `<span class="card-id">#${face.id}</span>${face.label ? ` · ${face.label}` : ''}`;
+    card.appendChild(footer);
+  }
 
   if (face.label) {
     const rm = document.createElement('button');
@@ -342,13 +374,24 @@ function makeFaceCard(face, small = false) {
     card.appendChild(rm);
   }
 
+  let _dragged = false;
   card.addEventListener('dragstart', e => {
+    _dragged = true;
     dragFaceId = face.id;
     card.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(face.id));
   });
-  card.addEventListener('dragend', () => { card.classList.remove('dragging'); dragFaceId = null; });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    dragFaceId = null;
+    setTimeout(() => _dragged = false, 50);
+  });
+
+  if (icon) {
+    card.addEventListener('click', () => { if (!_dragged) openLightbox(face); });
+  }
+
   return card;
 }
 
@@ -391,7 +434,7 @@ function makePersonGroup(label, groupFaces) {
   header.append(avatar, nameInput, actions);
 
   const facesDiv = document.createElement('div'); facesDiv.className='person-faces';
-  groupFaces.forEach(f => facesDiv.appendChild(makeFaceCard(f)));
+  groupFaces.forEach(f => facesDiv.appendChild(makeFaceCard(f, { icon: true })));
 
   const hint = document.createElement('div'); hint.className='drop-hint'; hint.textContent='Drop faces here…';
 
@@ -593,6 +636,25 @@ async function loadDashboard() {
     }
   });
 }
+
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
+const lightbox     = document.getElementById('lightbox');
+const lightboxImg  = document.getElementById('lightbox-img');
+const lightboxId   = document.getElementById('lightbox-id');
+const lightboxLbl  = document.getElementById('lightbox-lbl');
+
+function openLightbox(face) {
+  lightboxImg.src = thumb(face.id);
+  lightboxImg.onerror = () => lightboxImg.src = PLACEHOLDER;
+  lightboxId.textContent = `#${face.id}`;
+  lightboxLbl.textContent = face.label || 'Unidentified';
+  lightbox.classList.add('open');
+}
+function closeLightbox() { lightbox.classList.remove('open'); }
+
+document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 Chart.defaults.color = '#6e7681';
