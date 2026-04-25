@@ -11,63 +11,88 @@ logger = logging.getLogger(__name__)
 
 
 class CameraLoop:
-    """Captures frames from a webcam or video file and calls registered callbacks."""
+    """
+    Captures frames from a webcam or video file and calls registered callbacks.
 
-    def __init__(self, source: str | int = 0, fps: float = 5.0):
-        try:
-            source = int(source)
-        except (TypeError, ValueError):
-            pass
-        self._source = source
+    Camera source can be changed at any time via reset() — the switch happens
+    inside the capture thread so there is never more than one VideoCapture open
+    simultaneously (avoids AVFoundation crashes on macOS).
+    """
+
+    def __init__(self, source: str | int = 0, fps: float = 5.0) -> None:
+        self._source   = self._parse_source(source)
         self._interval = 1.0 / max(fps, 0.1)
-        self._running = False
+        self._running  = False
+        self._dirty    = False          # True = source changed, reopen cap
         self._thread: threading.Thread | None = None
         self._callbacks: list[Callable[[np.ndarray], None]] = []
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def add_callback(self, cb: Callable[[np.ndarray], None]) -> None:
+        self._callbacks.append(cb)
 
     def set_fps(self, fps: float) -> None:
         self._interval = 1.0 / max(fps, 0.1)
 
     def reset(self, source: str | int) -> None:
-        """Switch to a different camera source without losing callbacks."""
-        logger.info("switching camera source → %s", source)
-        self.stop()
-        try:
-            self._source = int(source)
-        except (TypeError, ValueError):
-            self._source = source
-        self.start()
-
-    def add_callback(self, cb: Callable[[np.ndarray], None]) -> None:
-        self._callbacks.append(cb)
+        """Queue a camera-source switch — no thread restart, no race condition."""
+        self._source = self._parse_source(source)
+        self._dirty  = True
+        logger.info("camera source queued: %s (switches on next frame)", self._source)
 
     def start(self) -> None:
         self._running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True, name="camera-loop")
+        self._thread  = threading.Thread(
+            target=self._loop, daemon=True, name="camera-loop"
+        )
         self._thread.start()
-        logger.info("camera loop started (source=%s, fps=%.1f)", self._source, 1 / self._interval)
+        logger.info("camera loop started (source=%s  fps=%.1f)",
+                    self._source, 1.0 / self._interval)
 
     def stop(self) -> None:
         self._running = False
         if self._thread:
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=6)
+
+    # ── Capture loop (single thread owns VideoCapture) ────────────────────────
 
     def _loop(self) -> None:
-        cap = cv2.VideoCapture(self._source)
-        if not cap.isOpened():
-            logger.error("cannot open camera source: %s", self._source)
-            return
+        cap: cv2.VideoCapture | None = None
+        active_source = None
 
-        logger.info("camera opened: %dx%d", int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-                    int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
         try:
             while self._running:
+                # Reopen when source changed or first run
+                if cap is None or self._dirty or active_source != self._source:
+                    if cap is not None:
+                        cap.release()
+                        cap = None
+                        time.sleep(0.15)          # short pause for driver cleanup
+
+                    active_source = self._source
+                    self._dirty   = False
+                    logger.info("opening camera: %s", active_source)
+
+                    cap = cv2.VideoCapture(active_source)
+                    if not cap.isOpened():
+                        logger.error("cannot open camera: %s", active_source)
+                        cap = None
+                        time.sleep(1.0)
+                        continue
+
+                    logger.info("camera ready: %dx%d",
+                                int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                                int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+
                 ret, frame = cap.read()
                 if not ret:
-                    if isinstance(self._source, str):
+                    # Loop video files; retry briefly for live cameras
+                    if isinstance(active_source, str) and os.path.isfile(active_source):
                         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                        continue
-                    logger.warning("failed to read frame, retrying")
-                    time.sleep(0.5)
+                    else:
+                        logger.warning("failed to read frame, retrying")
+                        time.sleep(0.4)
                     continue
 
                 for cb in self._callbacks:
@@ -77,6 +102,17 @@ class CameraLoop:
                         logger.exception("callback error")
 
                 time.sleep(self._interval)
+
         finally:
-            cap.release()
+            if cap is not None:
+                cap.release()
             logger.info("camera released")
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_source(source: str | int) -> str | int:
+        try:
+            return int(source)
+        except (TypeError, ValueError):
+            return source
