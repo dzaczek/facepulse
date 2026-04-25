@@ -197,6 +197,7 @@ canvas { max-height: 280px; }
 .btn-reset:hover { border-color: var(--text-dim); color: var(--text-bright); }
 .save-status { font-size: 12px; color: var(--green); opacity: 0; transition: opacity .3s; align-self: center; }
 .save-status.show { opacity: 1; }
+select:focus { border-color: var(--accent2) !important; }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -296,6 +297,28 @@ canvas { max-height: 280px; }
 <!-- ═══ TAB: SETTINGS ═══ -->
 <div class="tab-content" id="tab-settings">
   <div class="settings-content">
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <h3>Camera</h3>
+        <p>Select the capture device. Changes apply within 30 s (next settings poll).</p>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Camera source</div>
+          <div class="setting-desc">Physical device index or path. Click <strong>Scan</strong> to detect available cameras.</div>
+        </div>
+        <div class="setting-control" style="flex-direction:column;align-items:flex-end;gap:6px">
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="s-camera_source" style="background:var(--surface2);border:1.5px solid var(--border);color:var(--text-bright);border-radius:7px;padding:5px 10px;font-size:12px;outline:none;min-width:200px">
+              <option value="">Loading…</option>
+            </select>
+            <button class="btn-sm" id="btn-scan-cameras" title="Rescan available cameras">⟳ Scan</button>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim)" id="camera-scan-status"></div>
+        </div>
+      </div>
+    </div>
 
     <div class="settings-section">
       <div class="settings-section-header">
@@ -900,6 +923,8 @@ function readSettingsFromUI() {
     const el = document.getElementById(`s-${key}`);
     if (el) out[key] = el.checked;
   });
+  const camEl = document.getElementById('s-camera_source');
+  if (camEl && camEl.value) out.camera_source = camEl.value;
   return out;
 }
 
@@ -915,9 +940,57 @@ SLIDERS.forEach(({ key, fmt }) => {
   if (el && vl) el.addEventListener('change', () => { vl.textContent = el.checked ? 'On' : 'Off'; });
 });
 
+// ─── Camera picker ────────────────────────────────────────────────────────────
+async function scanCameras(currentSource) {
+  const sel    = document.getElementById('s-camera_source');
+  const status = document.getElementById('camera-scan-status');
+  status.textContent = 'Scanning…';
+  sel.disabled = true;
+
+  try {
+    const res = await fetch('/api/cameras');
+    const cams = res.ok ? await res.json() : [];
+    sel.innerHTML = '';
+
+    if (!cams.length) {
+      sel.innerHTML = '<option value="">No cameras found</option>';
+      status.textContent = 'No cameras detected by face-service';
+      return;
+    }
+
+    // Add any custom source not in the list (e.g. file path)
+    const sources = new Set(cams.map(c => c.source));
+    if (currentSource && !sources.has(String(currentSource))) {
+      cams.unshift({ source: String(currentSource), label: `Current (${currentSource})` });
+    }
+
+    cams.forEach(cam => {
+      const opt = document.createElement('option');
+      opt.value = cam.source;
+      opt.textContent = cam.label || cam.source;
+      if (String(cam.source) === String(currentSource)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    status.textContent = `${cams.length} camera(s) found`;
+  } catch (e) {
+    sel.innerHTML = `<option value="${currentSource || 0}">${currentSource || 0} (face-service offline)</option>`;
+    status.textContent = 'face-service unreachable — showing current value';
+  } finally {
+    sel.disabled = false;
+  }
+}
+
+document.getElementById('btn-scan-cameras').addEventListener('click', () => {
+  const current = document.getElementById('s-camera_source').value;
+  scanCameras(current);
+});
+
 async function loadSettings() {
   const data = await api.settings();
-  if (data) applySettingsToUI(data);
+  if (data) {
+    applySettingsToUI(data);
+    await scanCameras(data.camera_source);
+  }
 }
 
 document.getElementById('btn-save-settings').addEventListener('click', async () => {

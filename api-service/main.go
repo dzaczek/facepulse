@@ -33,8 +33,12 @@ func main() {
 	if err != nil {
 		log.Printf("load settings: %v — using defaults", err)
 	}
-	log.Printf("settings loaded: threshold=%.2f fps=%.0f eyes=%v",
-		cfg.MatcherThreshold, cfg.CameraFPS, cfg.RequireBothEyes)
+	// Seed camera source from env on first run (before any DB value exists)
+	if cfg.CameraSource == "" {
+		cfg.CameraSource = env("CAMERA_SOURCE", "0")
+	}
+	log.Printf("settings loaded: threshold=%.2f fps=%.0f camera=%s eyes=%v",
+		cfg.MatcherThreshold, cfg.CameraFPS, cfg.CameraSource, cfg.RequireBothEyes)
 
 	m := matcher.New(cfg.MatcherThreshold)
 	if err := loadMatcher(db, m); err != nil {
@@ -60,7 +64,8 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	srv := api.NewServer(db, m, met, dataDir, cfg)
+	faceServiceURL := env("FACE_SERVICE_URL", "http://face-service:8000")
+	srv := api.NewServer(db, m, met, dataDir, faceServiceURL, cfg)
 	srv.RegisterRoutes(mux)
 
 	log.Printf("facepulse api listening on %s", addr)

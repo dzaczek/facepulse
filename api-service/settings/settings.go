@@ -12,6 +12,9 @@ type S struct {
 	DbscanEps    float64 `json:"dbscan_eps"`     // cosine distance threshold (1-sim)
 	DbscanMinPts int     `json:"dbscan_min_pts"` // min cluster size
 
+	// ── Camera ──────────────────────────────────────────────────────────────
+	CameraSource string `json:"camera_source"` // "0", "1", "/dev/video0", file path
+
 	// ── Detection (Python face-service) ─────────────────────────────────────
 	MinConfidence   float64 `json:"min_confidence"`    // detector confidence gate
 	CameraFPS       float64 `json:"camera_fps"`        // frames to process per second
@@ -25,6 +28,7 @@ type S struct {
 
 func Default() S {
 	return S{
+		CameraSource:    "0",
 		MatcherThreshold: 0.55,
 		DedupeWindowS:    5,
 		EmaAlpha:         0.15,

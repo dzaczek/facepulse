@@ -1,4 +1,5 @@
 import base64
+import glob
 import logging
 import math
 import os
@@ -40,6 +41,7 @@ class DetectionConfig:
     max_pitch_deg: float    = 90.0   # 90 = disabled
     require_gaze: bool      = False
     gaze_threshold: float   = 0.80
+    camera_source: str      = "0"
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -53,6 +55,7 @@ class DetectionConfig:
             self.max_pitch_deg    = float(data.get("max_pitch_deg",    self.max_pitch_deg))
             self.require_gaze     = bool( data.get("require_gaze",     self.require_gaze))
             self.gaze_threshold   = float(data.get("gaze_threshold",   self.gaze_threshold))
+            self.camera_source    = str(  data.get("camera_source",    self.camera_source))
 
     def snapshot(self) -> "DetectionConfig":
         with self._lock:
@@ -65,6 +68,7 @@ class DetectionConfig:
                 max_pitch_deg    = self.max_pitch_deg,
                 require_gaze     = self.require_gaze,
                 gaze_threshold   = self.gaze_threshold,
+                camera_source    = self.camera_source,
             )
 
 
@@ -162,6 +166,42 @@ def passes_filters(face: DetectedFace, c: DetectionConfig) -> tuple[bool, str]:
     return True, ""
 
 
+# ─── Camera enumeration ───────────────────────────────────────────────────────
+
+def list_cameras() -> list[dict]:
+    """
+    Probe available camera sources.
+    Tries integer indices 0-7 and any /dev/video* devices on Linux.
+    Each successful open is included with its resolution.
+    """
+    found: dict[str, dict] = {}
+
+    def probe(source) -> dict | None:
+        key = str(source)
+        if key in found:
+            return None
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            cap.release()
+            return None
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        return {"source": key, "label": f"Camera {key}  ({w}×{h})", "width": w, "height": h}
+
+    for idx in range(8):
+        entry = probe(idx)
+        if entry:
+            found[entry["source"]] = entry
+
+    for dev in sorted(glob.glob("/dev/video*")):
+        entry = probe(dev)
+        if entry:
+            found[entry["source"]] = entry
+
+    return list(found.values())
+
+
 # ─── Crop helper ──────────────────────────────────────────────────────────────
 
 def crop_face(frame: np.ndarray, bbox: list[float]) -> str:
@@ -204,11 +244,15 @@ def _settings_poller():
             r = client.get("/api/settings")
             if r.status_code == 200:
                 data = r.json()
-                old_fps = cfg.camera_fps
+                old_fps    = cfg.camera_fps
+                old_source = cfg.camera_source
                 cfg.update_from_api(data)
                 if abs(cfg.camera_fps - old_fps) > 0.1:
                     camera.set_fps(cfg.camera_fps)
                     logger.info("FPS updated to %.1f", cfg.camera_fps)
+                if cfg.camera_source != old_source:
+                    logger.info("camera source changed: %s → %s", old_source, cfg.camera_source)
+                    camera.reset(cfg.camera_source)
         except Exception as e:
             logger.debug("settings poll: %s", e)
 
@@ -245,7 +289,8 @@ async def lifespan(app: FastAPI):
         if r.status_code == 200:
             cfg.update_from_api(r.json())
             camera.set_fps(cfg.camera_fps)
-            logger.info("initial settings loaded from API")
+            camera._source = int(cfg.camera_source) if cfg.camera_source.isdigit() else cfg.camera_source
+            logger.info("initial settings loaded: camera=%s fps=%.1f", cfg.camera_source, cfg.camera_fps)
     except Exception:
         logger.warning("could not fetch initial settings, using defaults")
 
@@ -263,6 +308,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FacePulse face-service", lifespan=lifespan)
+
+
+@app.get("/cameras")
+def cameras():
+    return list_cameras()
 
 
 @app.get("/health")

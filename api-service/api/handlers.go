@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -22,10 +23,11 @@ import (
 )
 
 type Server struct {
-	db      *storage.DB
-	matcher *matcher.Matcher
-	metrics *metrics.Metrics
-	dataDir string
+	db             *storage.DB
+	matcher        *matcher.Matcher
+	metrics        *metrics.Metrics
+	dataDir        string
+	faceServiceURL string
 
 	cfgMu sync.RWMutex
 	cfg   settings.S
@@ -54,14 +56,15 @@ type appearanceReq struct {
 	Thumbnail  string    `json:"thumbnail"`
 }
 
-func NewServer(db *storage.DB, m *matcher.Matcher, met *metrics.Metrics, dataDir string, cfg settings.S) *Server {
+func NewServer(db *storage.DB, m *matcher.Matcher, met *metrics.Metrics, dataDir, faceServiceURL string, cfg settings.S) *Server {
 	srv := &Server{
-		db:       db,
-		matcher:  m,
-		metrics:  met,
-		dataDir:  dataDir,
-		cfg:      cfg,
-		lastSeen: make(map[int64]time.Time),
+		db:             db,
+		matcher:        m,
+		metrics:        met,
+		dataDir:        dataDir,
+		faceServiceURL: faceServiceURL,
+		cfg:            cfg,
+		lastSeen:       make(map[int64]time.Time),
 	}
 	srv.matcher.SetThreshold(cfg.MatcherThreshold)
 	return srv
@@ -77,6 +80,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("DELETE /api/faces/{id}", s.handleDeleteFace)
 	mux.HandleFunc("POST /api/faces/delete-batch", s.handleDeleteFaces)
+	mux.HandleFunc("GET /api/cameras", s.handleCameras)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
@@ -397,6 +401,24 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"timeline":    timeline,
 		"top10":       top10,
 	})
+}
+
+// ─── Cameras (proxy to face-service) ─────────────────────────────────────────
+
+func (s *Server) handleCameras(w http.ResponseWriter, r *http.Request) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(s.faceServiceURL + "/cameras")
+	if err != nil {
+		// face-service unreachable — return minimal stub so UI still renders
+		writeJSON(w, []map[string]any{
+			{"source": s.getCfg().CameraSource, "label": "Current camera", "available": false},
+		})
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

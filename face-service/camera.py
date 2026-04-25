@@ -27,6 +27,16 @@ class CameraLoop:
     def set_fps(self, fps: float) -> None:
         self._interval = 1.0 / max(fps, 0.1)
 
+    def reset(self, source: str | int) -> None:
+        """Switch to a different camera source without losing callbacks."""
+        logger.info("switching camera source → %s", source)
+        self.stop()
+        try:
+            self._source = int(source)
+        except (TypeError, ValueError):
+            self._source = source
+        self.start()
+
     def add_callback(self, cb: Callable[[np.ndarray], None]) -> None:
         self._callbacks.append(cb)
 
