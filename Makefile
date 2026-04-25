@@ -2,13 +2,13 @@
 
 # ── Linux / RPi (everything in Docker) ───────────────────────────────────────
 up:
-	docker compose up --build -d
+	docker-compose up --build -d
 
 down:
-	docker compose down
+	docker-compose down
 
 logs:
-	docker compose logs -f
+	docker-compose logs -f
 
 # ── macOS development (recommended) ──────────────────────────────────────────
 # Only postgres + grafana in Docker.
@@ -16,7 +16,7 @@ logs:
 
 # Step 1: start database + grafana
 dev-macos:
-	docker compose up postgres grafana -d
+	docker-compose up postgres grafana -d
 	@echo ""
 	@echo "✓ postgres  → localhost:5432"
 	@echo "✓ grafana   → http://localhost:3000"
@@ -45,7 +45,7 @@ dev-face:
 # Legacy: api in Docker (kept for reference)
 dev:
 	FACE_SERVICE_URL=http://host.docker.internal:8000 \
-		docker compose up postgres api grafana --build -d
+		docker-compose up postgres api grafana --build -d
 	cd face-service && \
 		API_SERVICE_URL=http://localhost:8080 \
 		uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -58,10 +58,10 @@ build-arm:
 		-t ghcr.io/dzaczek/facepulse-face:latest ./face-service --push
 
 deploy-rpi:
-	ssh pi@$(RPI_HOST) 'cd ~/facepulse && docker compose pull && docker compose up -d'
+	ssh pi@$(RPI_HOST) 'cd ~/facepulse && docker-compose pull && docker-compose up -d'
 
 reset:
-	docker compose down -v
+	docker-compose down -v
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 label:
