@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import threading
 import time
 from typing import Callable
@@ -7,7 +8,27 @@ from typing import Callable
 import cv2
 import numpy as np
 
+_IS_MACOS = platform.system() == "Darwin"
+
 logger = logging.getLogger(__name__)
+
+
+def _open_capture(source: str | int) -> cv2.VideoCapture:
+    """
+    Open a VideoCapture with the correct backend.
+
+    On macOS, integer indices MUST use cv2.CAP_AVFOUNDATION — plain
+    cv2.VideoCapture(N) sometimes silently fails for USB cameras (e.g. Brio)
+    even though the device is detected by ffmpeg.
+    """
+    if _IS_MACOS and isinstance(source, int):
+        cap = cv2.VideoCapture(source, cv2.CAP_AVFOUNDATION)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        # fallback: try without explicit backend
+        return cv2.VideoCapture(source)
+    return cv2.VideoCapture(source)
 
 
 class CameraLoop:
@@ -74,10 +95,20 @@ class CameraLoop:
                     self._dirty   = False
                     logger.info("opening camera: %s", active_source)
 
-                    cap = cv2.VideoCapture(active_source)
+                    cap = _open_capture(active_source)
                     if not cap.isOpened():
-                        logger.error("cannot open camera: %s", active_source)
+                        cap.release()
                         cap = None
+                        logger.error("cannot open camera: %s", active_source)
+                        time.sleep(1.0)
+                        continue
+
+                    # Verify camera delivers actual frames (some cameras open but give nothing)
+                    ok, _ = cap.read()
+                    if not ok:
+                        cap.release()
+                        cap = None
+                        logger.error("camera opened but returned no frames: %s", active_source)
                         time.sleep(1.0)
                         continue
 

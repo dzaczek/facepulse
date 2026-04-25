@@ -371,7 +371,11 @@ def _scan_opencv_indices(found: dict, limit: int = 10) -> None:
         key = str(idx)
         if key in found:
             continue
-        cap = cv2.VideoCapture(idx)
+        # On macOS always use AVFoundation backend so results match camera.py
+        if platform.system() == "Darwin":
+            cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
+        else:
+            cap = cv2.VideoCapture(idx)
         if cap.isOpened():
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
