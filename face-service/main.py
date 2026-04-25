@@ -4,6 +4,9 @@ import glob
 import logging
 import math
 import os
+import platform
+import re
+import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
@@ -300,36 +303,92 @@ def draw_debug_frame(frame: np.ndarray, dets: list[_DebugDet]) -> np.ndarray:
 
 def list_cameras() -> list[dict]:
     """
-    Probe available camera sources.
-    Tries integer indices 0-7 and any /dev/video* devices on Linux.
-    Each successful open is included with its resolution.
+    List available camera devices.
+
+    macOS  → ffmpeg AVFoundation (real device names) + OpenCV fallback
+    Linux  → /dev/video* + OpenCV integer indices
+    Other  → OpenCV integer indices 0-9
     """
     found: dict[str, dict] = {}
+    sys = platform.system()
 
-    def probe(source) -> dict | None:
-        key = str(source)
+    if sys == "Darwin":
+        _scan_avfoundation(found)   # ffmpeg listing with real names
+    elif sys == "Linux":
+        _scan_v4l(found)            # /dev/video*
+
+    _scan_opencv_indices(found)     # catch anything the above missed
+
+    return sorted(found.values(), key=lambda c: (
+        int(c["source"]) if str(c["source"]).isdigit() else 999
+    ))
+
+
+def _scan_opencv_indices(found: dict, limit: int = 10) -> None:
+    for idx in range(limit):
+        key = str(idx)
         if key in found:
-            return None
-        cap = cv2.VideoCapture(source)
-        if not cap.isOpened():
+            continue
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             cap.release()
-            return None
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        return {"source": key, "label": f"Camera {key}  ({w}×{h})", "width": w, "height": h}
+            found[key] = {"source": key, "label": f"Camera {idx} ({w}×{h})", "width": w, "height": h}
+        else:
+            cap.release()
 
-    for idx in range(8):
-        entry = probe(idx)
-        if entry:
-            found[entry["source"]] = entry
 
+def _scan_avfoundation(found: dict) -> None:
+    """macOS: use ffmpeg -f avfoundation to list all AVFoundation video devices."""
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+            capture_output=True, text=True, timeout=8,
+        )
+        in_video = False
+        for line in r.stderr.splitlines():
+            if "AVFoundation video devices" in line:
+                in_video = True
+                continue
+            if "AVFoundation audio" in line:
+                in_video = False
+                continue
+            if not in_video:
+                continue
+            m = re.search(r"\[(\d+)\]\s+(.+)", line)
+            if not m:
+                continue
+            idx, name = m.group(1), m.group(2).strip()
+            cap = cv2.VideoCapture(int(idx), cv2.CAP_AVFOUNDATION)
+            if cap.isOpened():
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                cap.release()
+                found[idx] = {"source": idx, "label": f"[{idx}] {name} ({w}×{h})", "width": w, "height": h}
+            else:
+                cap.release()
+                # Include even if we can't open — user might want to try
+                found[idx] = {"source": idx, "label": f"[{idx}] {name} (unavailable)", "width": 0, "height": 0}
+    except FileNotFoundError:
+        logger.debug("ffmpeg not found — falling back to OpenCV index scan")
+    except subprocess.TimeoutExpired:
+        logger.debug("ffmpeg device listing timed out")
+
+
+def _scan_v4l(found: dict) -> None:
+    """Linux: scan /dev/video* nodes."""
     for dev in sorted(glob.glob("/dev/video*")):
-        entry = probe(dev)
-        if entry:
-            found[entry["source"]] = entry
-
-    return list(found.values())
+        if dev in found:
+            continue
+        cap = cv2.VideoCapture(dev)
+        if cap.isOpened():
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            found[dev] = {"source": dev, "label": f"{dev} ({w}×{h})", "width": w, "height": h}
+        else:
+            cap.release()
 
 
 # ─── Crop helper ──────────────────────────────────────────────────────────────
