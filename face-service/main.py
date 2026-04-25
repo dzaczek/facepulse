@@ -82,16 +82,32 @@ def face_width_px(face: DetectedFace) -> float:
 
 
 def has_both_eyes(face: DetectedFace) -> bool:
-    """Check both eye keypoints are present and spread apart enough."""
+    """
+    True only when the face is plausibly frontal.
+
+    Two geometric conditions must both hold:
+    1. The nose x-coordinate sits BETWEEN the two eye x-coordinates.
+       InsightFace predicts the hidden eye in profiles, but the nose is still
+       at the tip of the nose — outside the eye x-range for strong profiles.
+    2. Eye-to-eye distance is at least 22 % of face width.
+       Frontal faces: ~30-45 %.  Profiles: often < 15 %.
+    """
     kps = getattr(face, "kps", None)
-    if kps is None or len(kps) < 2:
+    if kps is None or len(kps) < 3:
         return False
+    lx = float(kps[0][0])
+    rx = float(kps[1][0])
+    nx = float(kps[2][0])
+
+    # Nose must be horizontally bracketed by the two eyes
+    lo, hi = min(lx, rx), max(lx, rx)
+    if not (lo < nx < hi):
+        return False
+
     left_eye  = np.array(kps[0])
     right_eye = np.array(kps[1])
     eye_dist  = float(np.linalg.norm(right_eye - left_eye))
-    face_w    = face_width_px(face)
-    # Both eyes must be at least 10% of face width apart
-    return eye_dist > face_w * 0.10
+    return eye_dist > face_width_px(face) * 0.22
 
 
 def estimate_yaw(face: DetectedFace) -> float:
@@ -111,23 +127,41 @@ def estimate_yaw(face: DetectedFace) -> float:
 
 def gaze_score(face: DetectedFace) -> float:
     """
-    Nose-centering symmetry score: 1.0 = perfect frontal gaze, 0 = extreme profile.
+    Combined frontal-gaze score in [0, 1].  1.0 = looking straight at camera.
 
-    When a person looks straight into the camera their nose sits equidistant
-    from both eyes.  The score is min(d_left, d_right) / max(d_left, d_right)
-    where d_* is the 2-D distance from nose to each eye keypoint.
+    Two components multiplied together:
+    - Horizontal symmetry: nose equidistant from both eyes.
+      Profiles fail this because the nose is much closer to one eye.
+    - Vertical symmetry: both eyes at the same height (catches head roll /
+      side tilt that can fool horizontal symmetry alone).
+      Score = 1 - clamp(Δy_eyes / eye_dist, 0, 1).
+
+    The product is strict: both components must be high simultaneously.
     """
     kps = getattr(face, "kps", None)
     if kps is None or len(kps) < 3:
         return 0.0
+
     left_eye  = np.array(kps[0], dtype=float)
     right_eye = np.array(kps[1], dtype=float)
     nose      = np.array(kps[2], dtype=float)
-    d_left    = float(np.linalg.norm(nose - left_eye))
-    d_right   = float(np.linalg.norm(nose - right_eye))
+
+    # ── Horizontal symmetry ──────────────────────────────────────────────────
+    d_left  = float(np.linalg.norm(nose - left_eye))
+    d_right = float(np.linalg.norm(nose - right_eye))
     if d_left + d_right < 1.0:
         return 0.0
-    return min(d_left, d_right) / max(d_left, d_right)
+    h_sym = min(d_left, d_right) / max(d_left, d_right)
+
+    # ── Vertical symmetry (eye-height parity) ─────────────────────────────
+    eye_dist = float(np.linalg.norm(right_eye - left_eye))
+    if eye_dist < 1.0:
+        return h_sym  # can't compute, fall back to h_sym only
+    v_diff = abs(float(left_eye[1]) - float(right_eye[1])) / eye_dist
+    # v_diff ≈ 0 for frontal, > 0.5 for 45°+ tilt → zero the score
+    v_sym = max(0.0, 1.0 - v_diff * 2.0)
+
+    return h_sym * v_sym
 
 
 def estimate_pitch(face: DetectedFace) -> float:
@@ -152,7 +186,7 @@ def passes_filters(face: DetectedFace, c: DetectionConfig) -> tuple[bool, str]:
     if face_width_px(face) < c.min_face_size_px:
         return False, f"face too small ({face_width_px(face):.0f}px < {c.min_face_size_px}px)"
     if c.require_both_eyes and not has_both_eyes(face):
-        return False, "both eyes not visible"
+        return False, "profile/occluded: nose not between eyes or eye span too small"
     yaw = estimate_yaw(face)
     if yaw > c.max_yaw_deg:
         return False, f"yaw {yaw:.0f}° > {c.max_yaw_deg}°"
@@ -162,8 +196,21 @@ def passes_filters(face: DetectedFace, c: DetectionConfig) -> tuple[bool, str]:
     if c.require_gaze:
         score = gaze_score(face)
         if score < c.gaze_threshold:
-            return False, f"gaze {score:.2f} < {c.gaze_threshold:.2f} (not looking at camera)"
+            return False, f"gaze {score:.2f} < {c.gaze_threshold:.2f} (h×v symmetry)"
     return True, ""
+
+
+def log_face_scores(face: DetectedFace) -> None:
+    """Log all filter scores at DEBUG level — useful for tuning thresholds."""
+    kps = getattr(face, "kps", None)
+    eyes_ok  = has_both_eyes(face)
+    g_score  = gaze_score(face)
+    yaw      = estimate_yaw(face)
+    pitch    = estimate_pitch(face)
+    logger.debug(
+        "face w=%.0fpx conf=%.2f eyes=%s yaw=%.0f° pitch=%.0f° gaze=%.2f",
+        face_width_px(face), face.confidence, eyes_ok, yaw, pitch, g_score,
+    )
 
 
 # ─── Camera enumeration ───────────────────────────────────────────────────────
@@ -263,6 +310,7 @@ def on_frame(frame: np.ndarray) -> None:
     c = cfg.snapshot()
     faces: list[DetectedFace] = backend.process(frame)
     for face in faces:
+        log_face_scores(face)
         ok, reason = passes_filters(face, c)
         if not ok:
             logger.debug("face filtered: %s", reason)
