@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from enum import Flag, auto
 
 import cv2
 import httpx
@@ -48,6 +49,7 @@ class DetectionConfig:
     require_gaze: bool      = False
     gaze_threshold: float   = 0.80
     camera_source: str      = "0"
+    face_backend: str       = "onnx"   # "onnx" | "mediapipe" | "hailo"
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -62,6 +64,7 @@ class DetectionConfig:
             self.require_gaze     = bool( data.get("require_gaze",     self.require_gaze))
             self.gaze_threshold   = float(data.get("gaze_threshold",   self.gaze_threshold))
             self.camera_source    = str(  data.get("camera_source",    self.camera_source))
+            self.face_backend     = str(  data.get("face_backend",     self.face_backend))
 
     def snapshot(self) -> "DetectionConfig":
         with self._lock:
@@ -75,6 +78,7 @@ class DetectionConfig:
                 require_gaze     = self.require_gaze,
                 gaze_threshold   = self.gaze_threshold,
                 camera_source    = self.camera_source,
+                face_backend     = self.face_backend,
             )
 
 
@@ -185,25 +189,57 @@ def estimate_pitch(face: DetectedFace) -> float:
     return abs(ratio - 0.7) * 90.0
 
 
+class FilterBlock(Flag):
+    """Bitmask of active filter rejections. NONE means the face passed."""
+    NONE       = 0
+    CONFIDENCE = auto()
+    SIZE       = auto()
+    EYES       = auto()
+    YAW        = auto()
+    PITCH      = auto()
+    GAZE       = auto()
+
+    def reason(self) -> str:
+        labels = {
+            FilterBlock.CONFIDENCE: "low confidence",
+            FilterBlock.SIZE:       "face too small",
+            FilterBlock.EYES:       "profile / eyes not frontal",
+            FilterBlock.YAW:        "yaw too large",
+            FilterBlock.PITCH:      "pitch too large",
+            FilterBlock.GAZE:       "not looking at camera",
+        }
+        parts = [v for k, v in labels.items() if k in self]
+        return " + ".join(parts) if parts else "pass"
+
+
 def passes_filters(face: DetectedFace, c: DetectionConfig) -> tuple[bool, str]:
-    """Return (ok, reason_if_rejected)."""
+    """Return (passed, reason_string) using FilterBlock bitmask internally."""
+    blocked = FilterBlock.NONE
+
     if face.confidence < c.min_confidence:
-        return False, f"confidence {face.confidence:.2f} < {c.min_confidence}"
+        blocked |= FilterBlock.CONFIDENCE
     if face_width_px(face) < c.min_face_size_px:
-        return False, f"face too small ({face_width_px(face):.0f}px < {c.min_face_size_px}px)"
+        blocked |= FilterBlock.SIZE
     if c.require_both_eyes and not has_both_eyes(face):
-        return False, "profile/occluded: nose not between eyes or eye span too small"
+        blocked |= FilterBlock.EYES
+
     yaw = estimate_yaw(face)
     if yaw > c.max_yaw_deg:
-        return False, f"yaw {yaw:.0f}° > {c.max_yaw_deg}°"
+        blocked |= FilterBlock.YAW
+
     pitch = estimate_pitch(face)
     if pitch > c.max_pitch_deg:
-        return False, f"pitch {pitch:.0f}° > {c.max_pitch_deg}°"
+        blocked |= FilterBlock.PITCH
+
     if c.require_gaze:
-        score = gaze_score(face)
+        # Prefer iris-based score (MediaPipe) over geometric approximation
+        score = (face.gaze_score_override
+                 if face.gaze_score_override is not None
+                 else gaze_score(face))
         if score < c.gaze_threshold:
-            return False, f"gaze {score:.2f} < {c.gaze_threshold:.2f} (h×v symmetry)"
-    return True, ""
+            blocked |= FilterBlock.GAZE
+
+    return blocked == FilterBlock.NONE, blocked.reason()
 
 
 def log_face_scores(face: DetectedFace) -> None:
@@ -408,18 +444,54 @@ def crop_face(frame: np.ndarray, bbox: list[float]) -> str:
 
 # ─── Services ─────────────────────────────────────────────────────────────────
 
-def build_backend():
-    if FACE_BACKEND == "hailo":
+def _create_backend(name: str):
+    if name == "hailo":
         from backend.hailo_backend import HailoBackend
         return HailoBackend(
             scrfd_hef  = os.getenv("HAILO_SCRFD_HEF",   "/models/scrfd_10g.hef"),
             arcface_hef= os.getenv("HAILO_ARCFACE_HEF", "/models/arcface_r50.hef"),
         )
+    if name == "mediapipe":
+        from backend.mediapipe_backend import MediaPipeBackend
+        return MediaPipeBackend()
     from backend.onnx_backend import OnnxBackend
     return OnnxBackend()
 
 
-backend = build_backend()
+class BackendProxy:
+    """Thread-safe wrapper that allows hot-swapping the face backend at runtime."""
+
+    def __init__(self, initial: str) -> None:
+        self._lock    = threading.Lock()
+        self._backend = _create_backend(initial)
+        self._name    = initial
+
+    def switch(self, name: str) -> None:
+        with self._lock:
+            logger.info("switching backend: %s → %s", self._name, name)
+            self._backend.stop()
+            self._backend = _create_backend(name)
+            self._backend.start()
+            self._name = name
+
+    def start(self) -> None:
+        with self._lock:
+            self._backend.start()
+
+    def stop(self) -> None:
+        with self._lock:
+            self._backend.stop()
+
+    def process(self, frame: np.ndarray) -> list[DetectedFace]:
+        with self._lock:
+            return self._backend.process(frame)
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+
+backend = BackendProxy(FACE_BACKEND)
 camera  = CameraLoop(source=CAMERA_SOURCE, fps=CAMERA_FPS)
 client  = httpx.Client(base_url=API_URL, timeout=5.0)
 
@@ -434,7 +506,8 @@ def _settings_poller():
             if r.status_code == 200:
                 data = r.json()
                 old_fps    = cfg.camera_fps
-                old_source = cfg.camera_source
+                old_source  = cfg.camera_source
+                old_backend = cfg.face_backend
                 cfg.update_from_api(data)
                 if abs(cfg.camera_fps - old_fps) > 0.1:
                     camera.set_fps(cfg.camera_fps)
@@ -442,6 +515,8 @@ def _settings_poller():
                 if cfg.camera_source != old_source:
                     logger.info("camera source changed: %s → %s", old_source, cfg.camera_source)
                     camera.reset(cfg.camera_source)
+                if cfg.face_backend != old_backend:
+                    backend.switch(cfg.face_backend)
         except Exception as e:
             logger.debug("settings poll: %s", e)
 

@@ -325,6 +325,20 @@ select:focus { border-color: var(--accent2) !important; }
       </div>
       <div class="setting-row">
         <div>
+          <div class="setting-label">Face detection backend</div>
+          <div class="setting-desc">Changes apply within 30 s. MediaPipe gives real iris-based gaze; ONNX gives best recognition accuracy.</div>
+        </div>
+        <div class="setting-control">
+          <select id="s-face_backend" style="background:var(--surface2);border:1.5px solid var(--border);color:var(--text-bright);border-radius:7px;padding:5px 10px;font-size:12px;outline:none;min-width:200px">
+            <option value="onnx">ONNX — InsightFace buffalo_l (default)</option>
+            <option value="mediapipe">MediaPipe — iris gaze + ArcFace</option>
+            <option value="hailo">Hailo-10H — RPi AI HAT+</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div>
           <div class="setting-label">Camera source</div>
           <div class="setting-desc">Physical device index or path. Click <strong>Scan</strong> to detect available cameras.</div>
         </div>
@@ -466,6 +480,7 @@ select:focus { border-color: var(--accent2) !important; }
         <div class="s-row"><span>Gaze</span><strong id="df-gaze">—</strong></div>
         <div class="s-row"><span>Max yaw</span><strong id="df-yaw">—</strong></div>
         <div class="s-row"><span>Max pitch</span><strong id="df-pitch">—</strong></div>
+        <div class="s-row"><span>Backend</span><strong id="df-backend">—</strong></div>
         <div class="s-row"><span>Camera</span><strong id="df-cam">—</strong></div>
         <div class="s-row"><span>FPS</span><strong id="df-fps-set">—</strong></div>
       </div>
@@ -1021,6 +1036,7 @@ function startDebugFeed() {
     document.getElementById('df-gaze').textContent    = s.require_gaze ? `On ≥${s.gaze_threshold}` : 'Off';
     document.getElementById('df-yaw').textContent     = s.max_yaw_deg < 90 ? `${s.max_yaw_deg}°` : 'Off';
     document.getElementById('df-pitch').textContent   = s.max_pitch_deg < 90 ? `${s.max_pitch_deg}°` : 'Off';
+    document.getElementById('df-backend').textContent = s.face_backend || 'onnx';
     document.getElementById('df-cam').textContent     = s.camera_source;
     document.getElementById('df-fps-set').textContent = s.camera_fps;
   });
@@ -1093,6 +1109,8 @@ function applySettingsToUI(cfg) {
     el.value = cfg[key] ?? DEFAULTS[key];
     vl.textContent = fmt(parseFloat(el.value));
   });
+  const beEl2 = document.getElementById('s-face_backend');
+  if (beEl2 && cfg.face_backend) beEl2.value = cfg.face_backend;
   const TOGGLES = ['require_both_eyes', 'require_gaze'];
   TOGGLES.forEach(key => {
     const el = document.getElementById(`s-${key}`);
@@ -1113,6 +1131,8 @@ function readSettingsFromUI() {
   });
   const camEl = document.getElementById('s-camera_source');
   if (camEl && camEl.value) out.camera_source = camEl.value;
+  const beEl = document.getElementById('s-face_backend');
+  if (beEl) out.face_backend = beEl.value;
   return out;
 }
 
