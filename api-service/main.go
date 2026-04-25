@@ -19,11 +19,11 @@ import (
 var staticFiles embed.FS
 
 func main() {
-	dbPath := env("DB_PATH", "/data/facepulse.db")
+	dbURL  := env("DATABASE_URL", "postgres://facepulse:facepulse@postgres:5432/facepulse?sslmode=disable")
 	dataDir := env("DATA_DIR", "/data")
 	addr := env("LISTEN_ADDR", ":8080")
 
-	db, err := storage.New(dbPath)
+	db, err := storage.New(dbURL)
 	if err != nil {
 		log.Fatalf("storage: %v", err)
 	}
