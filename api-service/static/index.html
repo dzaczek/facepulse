@@ -329,6 +329,20 @@ canvas { max-height: 280px; }
         <div><div class="setting-label">Max pitch (vertical tilt)</div><div class="setting-desc">90° = disabled. Reduce to ~30° to skip strongly tilted heads.</div></div>
         <div class="setting-control"><input type="range" class="setting-slider" id="s-max_pitch_deg" min="5" max="90" step="5"><span class="setting-val" id="v-max_pitch_deg">90°</span></div>
       </div>
+      <div class="setting-row" style="background:rgba(69,123,157,.06)">
+        <div>
+          <div class="setting-label">👁 Require looking at camera</div>
+          <div class="setting-desc">Only capture when the person's nose is centred between both eyes — the geometric signature of direct eye contact. Works without a gaze model.</div>
+        </div>
+        <div class="setting-control toggle-wrap">
+          <label class="toggle"><input type="checkbox" id="s-require_gaze"><span class="toggle-track"></span></label>
+          <span class="setting-val" id="v-require_gaze">Off</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Gaze symmetry threshold</div><div class="setting-desc">min(d_nose→eye_L, d_nose→eye_R) / max(…). 1.0 = perfect frontal. 0.75–0.85 is a good range; lower accepts slight off-axis looks.</div></div>
+        <div class="setting-control"><input type="range" class="setting-slider" id="s-gaze_threshold" min="0.5" max="1.0" step="0.01"><span class="setting-val" id="v-gaze_threshold">0.80</span></div>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -841,6 +855,7 @@ async function loadDashboard() {
 const DEFAULTS = {
   min_confidence: 0.50, camera_fps: 5, min_face_size_px: 60,
   require_both_eyes: false, max_yaw_deg: 90, max_pitch_deg: 90,
+  require_gaze: false, gaze_threshold: 0.80,
   matcher_threshold: 0.55, dedupe_window_s: 5, ema_alpha: 0.15,
   dbscan_eps: 0.42, dbscan_min_pts: 2,
 };
@@ -851,6 +866,7 @@ const SLIDERS = [
   { key: 'min_face_size_px', fmt: v => `${v} px` },
   { key: 'max_yaw_deg',      fmt: v => `${v}°` },
   { key: 'max_pitch_deg',    fmt: v => `${v}°` },
+  { key: 'gaze_threshold',   fmt: v => v.toFixed(2) },
   { key: 'matcher_threshold',fmt: v => v.toFixed(2) },
   { key: 'dedupe_window_s',  fmt: v => `${v} s` },
   { key: 'ema_alpha',        fmt: v => v.toFixed(2) },
@@ -866,9 +882,12 @@ function applySettingsToUI(cfg) {
     el.value = cfg[key] ?? DEFAULTS[key];
     vl.textContent = fmt(parseFloat(el.value));
   });
-  const eyeEl = document.getElementById('s-require_both_eyes');
-  const eyeVl = document.getElementById('v-require_both_eyes');
-  if (eyeEl) { eyeEl.checked = !!cfg.require_both_eyes; eyeVl.textContent = eyeEl.checked ? 'On' : 'Off'; }
+  const TOGGLES = ['require_both_eyes', 'require_gaze'];
+  TOGGLES.forEach(key => {
+    const el = document.getElementById(`s-${key}`);
+    const vl = document.getElementById(`v-${key}`);
+    if (el && vl) { el.checked = !!cfg[key]; vl.textContent = el.checked ? 'On' : 'Off'; }
+  });
 }
 
 function readSettingsFromUI() {
@@ -877,8 +896,10 @@ function readSettingsFromUI() {
     const el = document.getElementById(`s-${key}`);
     if (el) out[key] = parseFloat(el.value);
   });
-  const eyeEl = document.getElementById('s-require_both_eyes');
-  if (eyeEl) out.require_both_eyes = eyeEl.checked;
+  ['require_both_eyes', 'require_gaze'].forEach(key => {
+    const el = document.getElementById(`s-${key}`);
+    if (el) out[key] = el.checked;
+  });
   return out;
 }
 
@@ -888,9 +909,11 @@ SLIDERS.forEach(({ key, fmt }) => {
   const vl = document.getElementById(`v-${key}`);
   if (el && vl) el.addEventListener('input', () => { vl.textContent = fmt(parseFloat(el.value)); });
 });
-const eyeEl = document.getElementById('s-require_both_eyes');
-const eyeVl = document.getElementById('v-require_both_eyes');
-if (eyeEl) eyeEl.addEventListener('change', () => { eyeVl.textContent = eyeEl.checked ? 'On' : 'Off'; });
+['require_both_eyes', 'require_gaze'].forEach(key => {
+  const el = document.getElementById(`s-${key}`);
+  const vl = document.getElementById(`v-${key}`);
+  if (el && vl) el.addEventListener('change', () => { vl.textContent = el.checked ? 'On' : 'Off'; });
+});
 
 async function loadSettings() {
   const data = await api.settings();

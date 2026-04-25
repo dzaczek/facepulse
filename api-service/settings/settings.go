@@ -19,6 +19,8 @@ type S struct {
 	RequireBothEyes bool    `json:"require_both_eyes"` // discard profiles / occluded faces
 	MaxYawDeg       float64 `json:"max_yaw_deg"`       // max horizontal head turn (90=disabled)
 	MaxPitchDeg     float64 `json:"max_pitch_deg"`     // max vertical head tilt  (90=disabled)
+	RequireGaze     bool    `json:"require_gaze"`      // only capture when person looks at camera
+	GazeThreshold   float64 `json:"gaze_threshold"`    // min nose-eye symmetry score (0–1)
 }
 
 func Default() S {
@@ -34,5 +36,7 @@ func Default() S {
 		RequireBothEyes:  false,
 		MaxYawDeg:        90,
 		MaxPitchDeg:      90,
+		RequireGaze:      false,
+		GazeThreshold:    0.80,
 	}
 }

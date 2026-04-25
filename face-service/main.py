@@ -38,6 +38,8 @@ class DetectionConfig:
     require_both_eyes: bool = False
     max_yaw_deg: float      = 90.0   # 90 = disabled
     max_pitch_deg: float    = 90.0   # 90 = disabled
+    require_gaze: bool      = False
+    gaze_threshold: float   = 0.80
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -49,6 +51,8 @@ class DetectionConfig:
             self.require_both_eyes= bool( data.get("require_both_eyes",self.require_both_eyes))
             self.max_yaw_deg      = float(data.get("max_yaw_deg",      self.max_yaw_deg))
             self.max_pitch_deg    = float(data.get("max_pitch_deg",    self.max_pitch_deg))
+            self.require_gaze     = bool( data.get("require_gaze",     self.require_gaze))
+            self.gaze_threshold   = float(data.get("gaze_threshold",   self.gaze_threshold))
 
     def snapshot(self) -> "DetectionConfig":
         with self._lock:
@@ -59,6 +63,8 @@ class DetectionConfig:
                 require_both_eyes= self.require_both_eyes,
                 max_yaw_deg      = self.max_yaw_deg,
                 max_pitch_deg    = self.max_pitch_deg,
+                require_gaze     = self.require_gaze,
+                gaze_threshold   = self.gaze_threshold,
             )
 
 
@@ -99,6 +105,27 @@ def estimate_yaw(face: DetectedFace) -> float:
     return abs(ratio) * 90.0
 
 
+def gaze_score(face: DetectedFace) -> float:
+    """
+    Nose-centering symmetry score: 1.0 = perfect frontal gaze, 0 = extreme profile.
+
+    When a person looks straight into the camera their nose sits equidistant
+    from both eyes.  The score is min(d_left, d_right) / max(d_left, d_right)
+    where d_* is the 2-D distance from nose to each eye keypoint.
+    """
+    kps = getattr(face, "kps", None)
+    if kps is None or len(kps) < 3:
+        return 0.0
+    left_eye  = np.array(kps[0], dtype=float)
+    right_eye = np.array(kps[1], dtype=float)
+    nose      = np.array(kps[2], dtype=float)
+    d_left    = float(np.linalg.norm(nose - left_eye))
+    d_right   = float(np.linalg.norm(nose - right_eye))
+    if d_left + d_right < 1.0:
+        return 0.0
+    return min(d_left, d_right) / max(d_left, d_right)
+
+
 def estimate_pitch(face: DetectedFace) -> float:
     """Rough vertical rotation in degrees derived from keypoints."""
     kps = getattr(face, "kps", None)
@@ -128,6 +155,10 @@ def passes_filters(face: DetectedFace, c: DetectionConfig) -> tuple[bool, str]:
     pitch = estimate_pitch(face)
     if pitch > c.max_pitch_deg:
         return False, f"pitch {pitch:.0f}° > {c.max_pitch_deg}°"
+    if c.require_gaze:
+        score = gaze_score(face)
+        if score < c.gaze_threshold:
+            return False, f"gaze {score:.2f} < {c.gaze_threshold:.2f} (not looking at camera)"
     return True, ""
 
 
@@ -238,11 +269,13 @@ app = FastAPI(title="FacePulse face-service", lifespan=lifespan)
 def health():
     c = cfg.snapshot()
     return {
-        "status":          "ok",
-        "backend":         FACE_BACKEND,
-        "min_confidence":  c.min_confidence,
-        "require_eyes":    c.require_both_eyes,
-        "max_yaw_deg":     c.max_yaw_deg,
-        "max_pitch_deg":   c.max_pitch_deg,
-        "min_face_size_px":c.min_face_size_px,
+        "status":           "ok",
+        "backend":          FACE_BACKEND,
+        "min_confidence":   c.min_confidence,
+        "require_eyes":     c.require_both_eyes,
+        "max_yaw_deg":      c.max_yaw_deg,
+        "max_pitch_deg":    c.max_pitch_deg,
+        "min_face_size_px": c.min_face_size_px,
+        "require_gaze":     c.require_gaze,
+        "gaze_threshold":   c.gaze_threshold,
     }
