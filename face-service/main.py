@@ -13,6 +13,7 @@ import httpx
 import numpy as np
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from camera import CameraLoop
@@ -450,6 +451,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FacePulse face-service", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/debug/frame")

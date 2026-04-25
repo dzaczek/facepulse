@@ -449,6 +449,15 @@ select:focus { border-color: var(--accent2) !important; }
       <div class="legend-item"><div class="legend-dot" style="background:#00a5ff"></div>Nose (N)</div>
       <div class="legend-item"><div class="legend-dot" style="background:#dc00dc"></div>Left mouth (LM)</div>
       <div class="legend-item"><div class="legend-dot" style="background:#6450ff"></div>Right mouth (RM)</div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Face Service URL</div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="debug-fs-url" style="flex:1;background:var(--surface2);border:1.5px solid var(--border);color:var(--text-bright);border-radius:6px;padding:5px 8px;font-size:11px;font-family:monospace;outline:none" placeholder="http://localhost:8000" />
+          <button class="btn-sm" id="debug-fs-apply" title="Apply URL">Apply</button>
+        </div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Browser fetches frames directly — no Go proxy needed</div>
+      </div>
+
       <div class="debug-settings">
         <h3>Active filters</h3>
         <div class="s-row"><span>Confidence</span><strong id="df-conf">—</strong></div>
@@ -935,14 +944,22 @@ let _debugFpsArr   = [];
 let _debugErrCount = 0;
 const _DEBUG_MAX_ERRS = 3;
 
+// URL of face-service — browser fetches debug frames directly (CORS enabled)
+function getDebugBaseUrl() {
+  return (localStorage.getItem('facepulse_fs_url') || 'http://localhost:8000').replace(/\/$/, '');
+}
+
 function _setDebugOffline(msg) {
   stopDebugFeed();
-  const nf = document.getElementById('debug-no-frame');
+  const url = getDebugBaseUrl();
+  const nf  = document.getElementById('debug-no-frame');
   nf.innerHTML = `
-    <div style="color:var(--accent);margin-bottom:10px">⚠ ${msg}</div>
-    <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px">
-      macOS dev: restart with <code style="background:#1c2128;padding:2px 6px;border-radius:4px">make dev</code><br>
-      so FACE_SERVICE_URL=http://host.docker.internal:8000 is set
+    <div style="color:var(--accent);margin-bottom:8px">⚠ ${msg}</div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+      Trying: <code style="background:#1c2128;padding:2px 6px;border-radius:4px">${url}/debug/frame</code><br><br>
+      • face-service running natively? → URL should be <strong>http://localhost:8000</strong><br>
+      • face-service in Docker? → ensure port 8000 is exposed<br>
+      • Change URL in the sidebar input and click Apply
     </div>
     <button class="btn btn-ok" onclick="startDebugFeed()" style="font-size:12px;padding:6px 14px">↻ Retry</button>`;
   nf.style.display = 'block';
@@ -990,7 +1007,7 @@ function startDebugFeed() {
       }
     };
 
-    next.src = `/api/debug/frame?t=${Date.now()}`;
+    next.src = `${getDebugBaseUrl()}/debug/frame?t=${Date.now()}`;
   }
 
   fetchFrame();
@@ -1017,6 +1034,20 @@ function stopDebugFeed() {
   _debugFpsArr   = [];
   _debugErrCount = 0;
 }
+
+// Init URL input from localStorage
+const _fsUrlInput = document.getElementById('debug-fs-url');
+_fsUrlInput.value = getDebugBaseUrl();
+document.getElementById('debug-fs-apply').addEventListener('click', () => {
+  const v = _fsUrlInput.value.trim();
+  if (v) {
+    localStorage.setItem('facepulse_fs_url', v);
+    startDebugFeed();
+  }
+});
+_fsUrlInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('debug-fs-apply').click();
+});
 
 document.getElementById('debug-pause').addEventListener('click', () => {
   _debugPaused = !_debugPaused;

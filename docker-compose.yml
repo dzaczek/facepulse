@@ -19,6 +19,8 @@ services:
 
   face-service:
     build: ./face-service
+    ports:
+      - "8000:8000"   # exposed so browser can reach /debug/frame directly
     environment:
       FACE_BACKEND: onnx
       API_SERVICE_URL: http://api:8080
