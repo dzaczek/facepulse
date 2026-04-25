@@ -8,7 +8,8 @@ class DetectedFace:
     bbox: list[float]
     embedding: list[float]
     confidence: float
-    kps: list | None = None   # 5 keypoints: left_eye, right_eye, nose, left_mouth, right_mouth
+    kps: list | None = None                  # 5 keypoints: left_eye, right_eye, nose, left_mouth, right_mouth
+    gaze_score_override: float | None = None # set by MediaPipe (iris-based); None = use geometric fallback
 
 
 @runtime_checkable
