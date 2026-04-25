@@ -81,6 +81,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/faces/{id}", s.handleDeleteFace)
 	mux.HandleFunc("POST /api/faces/delete-batch", s.handleDeleteFaces)
 	mux.HandleFunc("GET /api/cameras", s.handleCameras)
+	mux.HandleFunc("GET /api/debug/frame", s.handleDebugFrame)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
@@ -404,6 +405,19 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // ─── Cameras (proxy to face-service) ─────────────────────────────────────────
+
+func (s *Server) handleDebugFrame(w http.ResponseWriter, r *http.Request) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(s.faceServiceURL + "/debug/frame")
+	if err != nil {
+		http.Error(w, "face-service unreachable", http.StatusServiceUnavailable)
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-cache, no-store")
+	_, _ = io.Copy(w, resp.Body)
+}
 
 func (s *Server) handleCameras(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 5 * time.Second}

@@ -378,13 +378,15 @@ func (d *DB) DashboardTimeline() ([]TimePoint, error) {
 }
 
 func (d *DB) DashboardTop10() ([]FaceTop, error) {
+	// Group by label so all face_ids for "Jacek" are summed together.
+	// Unlabelled faces fall back to their individual IDs.
 	rows, err := d.db.Query(`
-		SELECT f.id,
+		SELECT MIN(f.id) as face_id,
 		       COALESCE(NULLIF(f.label,''), '#' || CAST(f.id AS TEXT)) as label,
 		       COUNT(a.id) as cnt
 		FROM faces f
 		LEFT JOIN appearances a ON a.face_id = f.id
-		GROUP BY f.id
+		GROUP BY COALESCE(NULLIF(f.label,''), '#' || CAST(f.id AS TEXT))
 		ORDER BY cnt DESC
 		LIMIT 10
 	`)

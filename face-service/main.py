@@ -1,4 +1,5 @@
 import base64
+import dataclasses
 import glob
 import logging
 import math
@@ -12,6 +13,7 @@ import httpx
 import numpy as np
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import Response
 
 from camera import CameraLoop
 from backend.base import DetectedFace
@@ -213,6 +215,86 @@ def log_face_scores(face: DetectedFace) -> None:
     )
 
 
+# ─── Debug state ─────────────────────────────────────────────────────────────
+
+@dataclasses.dataclass
+class _DebugDet:
+    face:    DetectedFace
+    passed:  bool
+    reason:  str
+    gaze:    float
+    yaw:     float
+    pitch:   float
+    eyes_ok: bool
+
+_dbg_lock  = threading.Lock()
+_dbg_frame: np.ndarray | None = None
+_dbg_dets:  list[_DebugDet]   = []
+
+# Keypoint colours and short labels (InsightFace 5-pt order)
+_KPS_STYLE = [
+    ((0,   230, 230), "LE"),   # left eye   – cyan
+    ((0,   230, 100), "RE"),   # right eye  – green
+    ((0,   165, 255), "N"),    # nose       – orange
+    ((220,   0, 220), "LM"),   # left mouth – magenta
+    ((100,  80, 255), "RM"),   # right mouth– purple
+]
+
+
+def _txt(img, text, pos, scale=0.42, color=(255,255,255), thick=1):
+    cv2.putText(img, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, (0,0,0), thick+2, cv2.LINE_AA)
+    cv2.putText(img, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, color,  thick,    cv2.LINE_AA)
+
+
+def draw_debug_frame(frame: np.ndarray, dets: list[_DebugDet]) -> np.ndarray:
+    img = frame.copy()
+    h, w = img.shape[:2]
+
+    for d in dets:
+        clr = (30, 220, 30) if d.passed else (30, 30, 220)   # BGR: green / red
+
+        # ── Bounding box ──────────────────────────────────────────────────
+        x1, y1, x2, y2 = [int(c) for c in d.face.bbox]
+        cv2.rectangle(img, (x1, y1), (x2, y2), clr, 2)
+
+        # ── Keypoints ─────────────────────────────────────────────────────
+        kps = d.face.kps or []
+        for i, (pt, (kclr, klbl)) in enumerate(zip(kps, _KPS_STYLE)):
+            px, py = int(pt[0]), int(pt[1])
+            cv2.circle(img, (px, py), 5, kclr, -1, cv2.LINE_AA)
+            cv2.circle(img, (px, py), 5, (0,0,0), 1,  cv2.LINE_AA)
+            _txt(img, klbl, (px + 6, py - 4), 0.35, kclr)
+
+        # Draw line connecting eyes
+        if len(kps) >= 2:
+            le = (int(kps[0][0]), int(kps[0][1]))
+            re = (int(kps[1][0]), int(kps[1][1]))
+            cv2.line(img, le, re, (200, 200, 0), 1, cv2.LINE_AA)
+
+        # ── Score labels above bbox ───────────────────────────────────────
+        lines = [
+            f"conf {d.face.confidence:.2f}  w {d.face.bbox[2]-d.face.bbox[0]:.0f}px",
+            f"gaze {d.gaze:.2f}  yaw {d.yaw:.0f}°  pitch {d.pitch:.0f}°",
+            f"eyes {'OK' if d.eyes_ok else 'FAIL'}",
+        ]
+        if not d.passed:
+            lines.append(f"❌ {d.reason[:36]}")
+
+        line_h = 15
+        y_start = max(y1 - len(lines) * line_h - 4, 2)
+        for i, ln in enumerate(lines):
+            (tw, th), _ = cv2.getTextSize(ln, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+            yp = y_start + i * line_h + th
+            cv2.rectangle(img, (x1, yp - th - 1), (x1 + tw + 3, yp + 2), (0,0,0), -1)
+            _txt(img, ln, (x1 + 2, yp), 0.42, clr if i < 3 else (80, 80, 255))
+
+    # ── Frame overlay (bottom-left) ───────────────────────────────────────
+    ts = time.strftime("%H:%M:%S")
+    _txt(img, f"{w}×{h}  {ts}  faces:{len(dets)}", (6, h - 8), 0.42, (180,180,180))
+
+    return img
+
+
 # ─── Camera enumeration ───────────────────────────────────────────────────────
 
 def list_cameras() -> list[dict]:
@@ -309,9 +391,16 @@ def _settings_poller():
 def on_frame(frame: np.ndarray) -> None:
     c = cfg.snapshot()
     faces: list[DetectedFace] = backend.process(frame)
+
+    dets: list[_DebugDet] = []
     for face in faces:
         log_face_scores(face)
         ok, reason = passes_filters(face, c)
+        dets.append(_DebugDet(
+            face=face, passed=ok, reason=reason,
+            gaze=gaze_score(face), yaw=estimate_yaw(face),
+            pitch=estimate_pitch(face), eyes_ok=has_both_eyes(face),
+        ))
         if not ok:
             logger.debug("face filtered: %s", reason)
             continue
@@ -325,6 +414,11 @@ def on_frame(frame: np.ndarray) -> None:
             })
         except httpx.RequestError as e:
             logger.warning("api unreachable: %s", e)
+
+    with _dbg_lock:
+        global _dbg_frame, _dbg_dets
+        _dbg_frame = frame
+        _dbg_dets  = dets
 
 
 # ─── App lifecycle ────────────────────────────────────────────────────────────
@@ -356,6 +450,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FacePulse face-service", lifespan=lifespan)
+
+
+@app.get("/debug/frame")
+def debug_frame():
+    with _dbg_lock:
+        frame = _dbg_frame
+        dets  = list(_dbg_dets)
+
+    if frame is None:
+        ph = np.zeros((360, 640, 3), dtype=np.uint8)
+        _txt(ph, "No frame captured yet — is the camera running?",
+             (40, 180), 0.6, (120, 120, 120))
+        annotated = ph
+    else:
+        annotated = draw_debug_frame(frame, dets)
+
+    _, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 82])
+    return Response(content=buf.tobytes(), media_type="image/jpeg",
+                    headers={"Cache-Control": "no-cache, no-store"})
 
 
 @app.get("/cameras")
