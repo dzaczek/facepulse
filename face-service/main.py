@@ -50,6 +50,7 @@ class DetectionConfig:
     gaze_threshold: float   = 0.80
     camera_source: str      = "0"
     face_backend: str       = "onnx"   # "onnx" | "mediapipe" | "hailo"
+    frame_rotate: int       = 0        # 0 | 90 | 180 | 270 degrees clockwise
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -65,6 +66,7 @@ class DetectionConfig:
             self.gaze_threshold   = float(data.get("gaze_threshold",   self.gaze_threshold))
             self.camera_source    = str(  data.get("camera_source",    self.camera_source))
             self.face_backend     = str(  data.get("face_backend",     self.face_backend))
+            self.frame_rotate     = int(  data.get("frame_rotate",     self.frame_rotate))
 
     def snapshot(self) -> "DetectionConfig":
         with self._lock:
@@ -79,6 +81,7 @@ class DetectionConfig:
                 gaze_threshold   = self.gaze_threshold,
                 camera_source    = self.camera_source,
                 face_backend     = self.face_backend,
+                frame_rotate     = self.frame_rotate,
             )
 
 
@@ -353,7 +356,10 @@ def list_cameras() -> list[dict]:
     elif sys == "Linux":
         _scan_v4l(found)            # /dev/video*
 
-    _scan_opencv_indices(found)     # catch anything the above missed
+    # OpenCV fallback: only try indices not yet found, up to max_found+2 or 4
+    known_int = [int(k) for k in found if str(k).isdigit()]
+    limit = max(known_int) + 2 if known_int else 4
+    _scan_opencv_indices(found, limit=limit)
 
     return sorted(found.values(), key=lambda c: (
         int(c["source"]) if str(c["source"]).isdigit() else 999
@@ -523,8 +529,17 @@ def _settings_poller():
 
 # ─── Frame callback ──────────────────────────────────────────────────────────
 
+_ROTATE_CODE = {
+    90:  cv2.ROTATE_90_CLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+}
+
+
 def on_frame(frame: np.ndarray) -> None:
     c = cfg.snapshot()
+    if c.frame_rotate and c.frame_rotate in _ROTATE_CODE:
+        frame = cv2.rotate(frame, _ROTATE_CODE[c.frame_rotate])
     faces: list[DetectedFace] = backend.process(frame)
 
     dets: list[_DebugDet] = []

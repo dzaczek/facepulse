@@ -352,6 +352,20 @@ select:focus { border-color: var(--accent2) !important; }
           <div style="font-size:11px;color:var(--text-dim)" id="camera-scan-status"></div>
         </div>
       </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Frame rotation</div>
+          <div class="setting-desc">Rotate each frame before processing. Use when external camera image is upside-down or sideways.</div>
+        </div>
+        <div class="setting-control">
+          <select id="s-frame_rotate" style="background:var(--surface2);border:1.5px solid var(--border);color:var(--text-bright);border-radius:7px;padding:5px 10px;font-size:12px;outline:none;min-width:140px">
+            <option value="0">0° — no rotation</option>
+            <option value="90">90° clockwise</option>
+            <option value="180">180° — upside down</option>
+            <option value="270">270° (90° CCW)</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -1111,6 +1125,8 @@ function applySettingsToUI(cfg) {
   });
   const beEl2 = document.getElementById('s-face_backend');
   if (beEl2 && cfg.face_backend) beEl2.value = cfg.face_backend;
+  const rotEl = document.getElementById('s-frame_rotate');
+  if (rotEl && cfg.frame_rotate !== undefined) rotEl.value = String(cfg.frame_rotate);
   const TOGGLES = ['require_both_eyes', 'require_gaze'];
   TOGGLES.forEach(key => {
     const el = document.getElementById(`s-${key}`);
@@ -1133,6 +1149,8 @@ function readSettingsFromUI() {
   if (camEl && camEl.value) out.camera_source = camEl.value;
   const beEl = document.getElementById('s-face_backend');
   if (beEl) out.face_backend = beEl.value;
+  const rotEl2 = document.getElementById('s-frame_rotate');
+  if (rotEl2) out.frame_rotate = parseInt(rotEl2.value, 10);
   return out;
 }
 

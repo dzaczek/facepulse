@@ -15,6 +15,7 @@ type S struct {
 	// ── Camera & backend ────────────────────────────────────────────────────
 	CameraSource string `json:"camera_source"` // "0", "1", "/dev/video0", file path
 	FaceBackend  string `json:"face_backend"`  // "onnx" | "mediapipe" | "hailo"
+	FrameRotate  int    `json:"frame_rotate"`  // 0 | 90 | 180 | 270
 
 	// ── Detection (Python face-service) ─────────────────────────────────────
 	MinConfidence   float64 `json:"min_confidence"`    // detector confidence gate
@@ -31,6 +32,7 @@ func Default() S {
 	return S{
 		CameraSource:    "0",
 		FaceBackend:     "onnx",
+		FrameRotate:     0,
 		MatcherThreshold: 0.55,
 		DedupeWindowS:    5,
 		EmaAlpha:         0.15,
