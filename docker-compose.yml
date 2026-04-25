@@ -5,6 +5,9 @@ services:
       - "8080:8080"
     environment:
       DB_PATH: /data/facepulse.db
+      # macOS dev: face-service runs natively → use host.docker.internal
+      # Linux/RPi: face-service in Docker → use http://face-service:8000
+      FACE_SERVICE_URL: ${FACE_SERVICE_URL:-http://face-service:8000}
     volumes:
       - face-data:/data
     restart: unless-stopped

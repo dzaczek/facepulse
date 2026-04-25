@@ -929,40 +929,73 @@ async function loadDashboard() {
 }
 
 // ─── Debug live feed ──────────────────────────────────────────────────────────
-let _debugTimer   = null;
-let _debugPaused  = false;
-let _debugFrameT  = 0;
-let _debugFpsArr  = [];
+let _debugTimer    = null;
+let _debugPaused   = false;
+let _debugFpsArr   = [];
+let _debugErrCount = 0;
+const _DEBUG_MAX_ERRS = 3;
+
+function _setDebugOffline(msg) {
+  stopDebugFeed();
+  const nf = document.getElementById('debug-no-frame');
+  nf.innerHTML = `
+    <div style="color:var(--accent);margin-bottom:10px">⚠ ${msg}</div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px">
+      macOS dev: restart with <code style="background:#1c2128;padding:2px 6px;border-radius:4px">make dev</code><br>
+      so FACE_SERVICE_URL=http://host.docker.internal:8000 is set
+    </div>
+    <button class="btn btn-ok" onclick="startDebugFeed()" style="font-size:12px;padding:6px 14px">↻ Retry</button>`;
+  nf.style.display = 'block';
+}
 
 function startDebugFeed() {
-  const img      = document.getElementById('debug-img');
-  const noFrame  = document.getElementById('debug-no-frame');
-  const fpsEl    = document.getElementById('debug-fps');
+  const img   = document.getElementById('debug-img');
+  const nf    = document.getElementById('debug-no-frame');
+  const fpsEl = document.getElementById('debug-fps');
+  _debugErrCount = 0;
+  _debugPaused   = false;
+  document.getElementById('debug-pause').textContent = '⏸ Pause';
 
-  img.style.display    = 'block';
-  noFrame.style.display= 'none';
-  fpsEl.style.display  = 'block';
+  nf.innerHTML    = 'Connecting to face-service…';
+  nf.style.display= 'block';
+  img.style.display  = 'none';
+  fpsEl.style.display= 'none';
+
+  if (_debugTimer) clearInterval(_debugTimer);
 
   function fetchFrame() {
     if (_debugPaused) return;
-    const url = `/api/debug/frame?t=${Date.now()}`;
-    const t0  = performance.now();
+    const t0   = performance.now();
     const next = new Image();
+
     next.onload = () => {
+      _debugErrCount = 0;
       img.src = next.src;
-      const dt = performance.now() - t0;
+      if (img.style.display === 'none') {
+        img.style.display   = 'block';
+        nf.style.display    = 'none';
+        fpsEl.style.display = 'block';
+      }
+      const dt  = performance.now() - t0;
       _debugFpsArr.push(1000 / Math.max(dt, 50));
       if (_debugFpsArr.length > 8) _debugFpsArr.shift();
       const fps = (_debugFpsArr.reduce((a,b)=>a+b,0) / _debugFpsArr.length).toFixed(1);
       fpsEl.textContent = `${fps} fps`;
     };
-    next.src = url;
+
+    next.onerror = () => {
+      _debugErrCount++;
+      if (_debugErrCount >= _DEBUG_MAX_ERRS) {
+        _setDebugOffline('face-service unreachable (503)');
+      }
+    };
+
+    next.src = `/api/debug/frame?t=${Date.now()}`;
   }
 
   fetchFrame();
   _debugTimer = setInterval(fetchFrame, 220);
 
-  // Populate active-filters sidebar
   api.settings().then(s => {
     if (!s) return;
     document.getElementById('df-conf').textContent    = s.min_confidence;
@@ -978,10 +1011,11 @@ function startDebugFeed() {
 
 function stopDebugFeed() {
   if (_debugTimer) { clearInterval(_debugTimer); _debugTimer = null; }
-  document.getElementById('debug-img').style.display     = 'none';
-  document.getElementById('debug-no-frame').style.display= 'block';
-  document.getElementById('debug-fps').style.display     = 'none';
-  _debugFpsArr = [];
+  const img = document.getElementById('debug-img');
+  if (img) img.style.display = 'none';
+  document.getElementById('debug-fps').style.display  = 'none';
+  _debugFpsArr   = [];
+  _debugErrCount = 0;
 }
 
 document.getElementById('debug-pause').addEventListener('click', () => {

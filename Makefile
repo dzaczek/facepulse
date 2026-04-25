@@ -9,9 +9,10 @@ down:
 logs:
 	docker compose logs -f
 
-# macOS dev: run face-service natively (camera access), rest in Docker
+# macOS dev: face-service runs natively (camera), api in Docker with host.docker.internal
 dev:
-	docker compose up api prometheus grafana --build -d
+	FACE_SERVICE_URL=http://host.docker.internal:8000 \
+		docker compose up api prometheus grafana --build -d
 	@echo "--- Starting face-service natively (macOS camera) ---"
 	cd face-service && pip install -r requirements.txt && \
 		API_SERVICE_URL=http://localhost:8080 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
